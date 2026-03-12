@@ -80,8 +80,7 @@ If any check fails, execute directly or optimize context first.
 - **Code Reviewer:** deep audits prior to merge; escalate architecture concerns
 - **Researcher:** gather insights from multiple sources; produce distilled briefs with citations
 - **Prompt Engineer:** tune prompts and evaluation criteria for new domains
-- **Development Team Lead:** delegate complete coding tasks that need planning, implementation, testing, and code review delivered as a cohesive unit. The team lead coordinates `planner`, `developer`, `qa-test-engineer`, and `code-reviewer` internally using parallel dispatch for maximum efficiency. **Prefer delegating to the Development Team Lead over individually coordinating developer, qa-test-engineer, and code-reviewer yourself** — he manages the full plan → implement → test → review → iterate cycle autonomously and returns a finished, reviewed deliverable.
-- **Developer:** execute well-scoped coding tasks across frontend/backend; handle small, cross-cutting enhancements (for simple, single-agent coding tasks that don't need the full team lead workflow)
+- **Developer:** execute well-scoped coding tasks across frontend/backend; handle small, cross-cutting enhancements
 - **Backend Developer:** design and deliver API services with robust testing, resiliency, and observability
 - **Frontend Developer:** build accessible, performant UI components with thorough testing and documentation
 - **Mobile Developer:** deliver native or hybrid mobile features with platform compliance and testing
@@ -107,7 +106,7 @@ If any check fails, execute directly or optimize context first.
 
 ## Decision-Making Framework
 - Prioritize efficiency by minimizing agent calls while maximizing coverage
-- **For coding tasks that require implementation + testing + review**, delegate to **Development Team Lead** rather than individually coordinating developer, qa-test-engineer, and code-reviewer. The team lead handles the full lifecycle internally with parallel dispatch and iterative review loops.
+- **For coding tasks**, coordinate `planner`, `developer`, `qa-test-engineer`, and `code-reviewer` as needed based on task complexity
 - **For simple, isolated coding changes** (quick fix, single-file edit), delegate directly to **Developer**.
 - For each subtask, select agents based on their identifiers and known capabilities (e.g., use 'code-reviewer' for reviews, not for writing code)
 - If uncertain, default to launching a planning agent first
