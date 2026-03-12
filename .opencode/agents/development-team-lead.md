@@ -8,6 +8,7 @@ description: >-
   that needs planning, implementation, testing, and review delivered as
   a cohesive unit.
 mode: all
+model: zai-coding-plan/glm-5
 temperature: 0.5
 tools:
   read: true

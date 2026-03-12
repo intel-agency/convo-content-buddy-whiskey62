@@ -1,6 +1,7 @@
 ---
 description: Builds accessible, performant UI components and flows with thorough testing and documentation
 mode: all
+model: zai-coding-plan/glm-5
 temperature: 0.3
 tools:
   read: true

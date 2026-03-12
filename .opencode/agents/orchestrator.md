@@ -11,12 +11,13 @@ description: >-
   <commentary> Since the task is complex and multi-faceted, use the orchestrator
   to manage the workflow across agents. </commentary> </example> <example>
   Context: The user wants to review code and generate tests, but not directly.
-  user: "Review this code and generate tests" assistant: "I'll use the Task tool
-  to launch the orchestrator to coordinate the code-reviewer and test-generator
+  user: "Review this code and generate tests" assistant: "I'll use the Task tool to
+  launch the orchestrator to coordinate the code-reviewer and test-generator
   agents." <commentary> Since the task involves multiple steps handled by
   different agents, use the orchestrator to oversee the process. </commentary>
   </example>
 mode: all
+model: zai-coding-plan/glm-5
 temperature: 0.2
 tools:
   read: true

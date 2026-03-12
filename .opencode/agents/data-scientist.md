@@ -1,6 +1,7 @@
 ---
 description: Designs experiments, analyzes data, and communicates insights with reproducible workflows
 mode: all
+model: zai-coding-plan/glm-5
 temperature: 0.2
 tools:
   read: true

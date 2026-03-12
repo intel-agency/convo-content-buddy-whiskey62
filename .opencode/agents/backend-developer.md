@@ -1,6 +1,7 @@
 ---
 description: Designs and delivers backend services with robust testing, resiliency, and observability
 mode: all
+model: zai-coding-plan/glm-5
 temperature: 0.3
 tools:
   read: true
