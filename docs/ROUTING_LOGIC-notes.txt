@@ -1,0 +1,38 @@
+Can we get events from other repos in the org?
+
+
+ok now we need to implement the workflow orechtestration logic inside trhe orchestrator agent's prompt file.
+
+It is a switch statement based on pattern matching of coominations of:
+
+1. event trigger type
+2. labels
+3. event data
+
+which each "route" or contain the prompt section content
+
+Lets work on a plan
+
+
+cconrete, rough eamples from the real worklfloe:
+
+
+
+
+
+it will have to denot agent dest routing also
+
+
+Event type
+new repo 
+
+payload
+
+from: ai-new-app-tempplate template repo
+
+Action
+
+orchestrate-project-setup in new repo
+
+
+new repo 

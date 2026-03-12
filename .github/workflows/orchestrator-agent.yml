@@ -1,0 +1,119 @@
+name: orchestrator-agent
+
+on:
+  issues:
+    types: [opened, edited, reopened, assigned]
+  issue_comment:
+    types: [created, edited]
+  pull_request_review_comment:
+    types: [created, edited]
+  pull_request_review:
+    types: [submitted, edited]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Custom prompt to send to the orchestrator (bypasses event assembly)"
+        required: false
+        type: string
+  # workflow_run:
+  #   types: [completed, requested]
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+      issues: write
+      packages: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Assemble orchestrator prompt
+        shell: bash
+        env:
+          EVENT_JSON: ${{ toJson(github.event) }}
+          CUSTOM_PROMPT: ${{ inputs.prompt }}
+        run: |
+          ASSEMBLED_PROMPT=".assembled-orchestrator-prompt.md"
+
+          # If a custom prompt was provided via workflow_dispatch, use it directly
+          if [[ -n "${CUSTOM_PROMPT}" ]]; then
+            echo "${CUSTOM_PROMPT}" > "$ASSEMBLED_PROMPT"
+            echo "ORCHESTRATOR_PROMPT_PATH=$ASSEMBLED_PROMPT" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          # Build the structured event context + JSON blob to inject
+          EVENT_BLOCK=$(cat <<'BLOCK_END'
+          Event Name: ${{ github.event_name }}
+          Action: ${{ github.event.action }}
+          Actor: ${{ github.actor }}
+          Repository: ${{ github.repository }}
+          Ref: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          BLOCK_END
+          )
+
+          # Assemble prompt in the workspace so it's available inside the devcontainer
+          PROMPT_TEMPLATE=".github/workflows/prompts/orchestrator-agent-prompt.md"
+
+          # Replace __EVENT_DATA__ placeholder with structured context + full event JSON
+          {
+            sed '/__EVENT_DATA__/,$ d' "$PROMPT_TEMPLATE"
+            echo "$EVENT_BLOCK"
+            echo ""
+            echo '```json'
+            echo "$EVENT_JSON"
+            echo '```'
+          } > "$ASSEMBLED_PROMPT"
+
+          echo "ORCHESTRATOR_PROMPT_PATH=$ASSEMBLED_PROMPT" >> "$GITHUB_ENV"
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify devcontainer image exists
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}/devcontainer:main-latest"
+          if ! docker manifest inspect "$IMAGE" > /dev/null 2>&1; then
+            echo "::error::Devcontainer image not found: $IMAGE"
+            echo "::error::Run the 'Publish Docker' and 'Pre-build dev container image' workflows first."
+            exit 1
+          fi
+
+      - name: Pull devcontainer image
+        run: docker pull "ghcr.io/${{ github.repository }}/devcontainer:main-latest"
+
+      - name: Install devcontainer CLI
+        run: npm install -g @devcontainers/cli
+
+      - name: Start devcontainer
+        run: |
+          devcontainer up \
+            --workspace-folder . \
+            --config .devcontainer/devcontainer.json
+
+      - name: Execute orchestrator agent in devcontainer
+        env:
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          KIMI_CODE_ORCHESTRATOR_AGENT_API_KEY: ${{ secrets.KIMI_CODE_ORCHESTRATOR_AGENT_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          devcontainer exec \
+            --workspace-folder . \
+            --config .devcontainer/devcontainer.json \
+            --remote-env ZHIPU_API_KEY="$ZHIPU_API_KEY" \
+            --remote-env KIMI_CODE_ORCHESTRATOR_AGENT_API_KEY="$KIMI_CODE_ORCHESTRATOR_AGENT_API_KEY" \
+            --remote-env GITHUB_TOKEN="$GITHUB_TOKEN" \
+            --remote-env GITHUB_PERSONAL_ACCESS_TOKEN="$GITHUB_TOKEN" \
+            -- bash ./run_opencode_prompt.sh -f "$ORCHESTRATOR_PROMPT_PATH"
