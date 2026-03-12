@@ -352,3 +352,62 @@ ZAI_API_KEY=d49c6393b0a34c2fb42884eeaad298f3.32nbWh7lKdNCex5K
 **Report Prepared By:** Orchestrator Agent
 **Date:** 2026-03-12
 **Status:** Final
+
+---
+
+## Appendix C: Root Cause Analysis & Resolution (2026-03-12)
+
+### Root Cause Identified
+
+**Problem:** Custom agent definitions in `.opencode/agents/*.md` were missing the `model:` field in their frontmatter, causing opencode CLI to fall back to hardcoded default model assignments.
+
+**Evidence:**
+- UI showed error: `"Agent developer's configured model ollama-cloud/kimi-k2.5 is not valid"`
+- The `ollama-cloud` provider does not exist (verified via `opencode models ollama-cloud`)
+- Strings `kimi-k2.5` and `ollama-cloud` were found embedded in the opencode binary itself
+- This indicates opencode CLI has **hardcoded default model assignments** for certain agent types
+
+**Why Some Agents Worked and Others Failed:**
+| Agent Type | Status | Reason |
+|------------|--------|--------|
+| `planner` | ✅ Works | Different hardcoded default model |
+| `github-expert` | ✅ Works | Different hardcoded default model |
+| `qa-test-engineer` | ✅ Works | Different hardcoded default model |
+| `development-team-lead` | ✅ Works | Different hardcoded default model |
+| `developer` | ❌ Fails | Hardcoded to `ollama-cloud/kimi-k2.5` (non-existent provider) |
+| `backend-developer` | ❌ Fails | Hardcoded to `ollama-cloud/kimi-k2.5` (non-existent provider) |
+
+### Resolution Applied
+
+**Fix:** Added explicit `model: zai-coding-plan/glm-5` to the frontmatter of all custom agents with `mode: all` to override the hardcoded defaults.
+
+**Files Updated:**
+1. `.opencode/agents/developer.md` - Added `model: zai-coding-plan/glm-5`
+2. `.opencode/agents/backend-developer.md` - Added `model: zai-coding-plan/glm-5`
+3. `.opencode/agents/data-scientist.md` - Added `model: zai-coding-plan/glm-5`
+4. `.opencode/agents/frontend-developer.md` - Added `model: zai-coding-plan/glm-5`
+5. `.opencode/agents/devops-engineer.md` - Added `model: zai-coding-plan/glm-5`
+6. `.opencode/agents/ml-engineer.md` - Added `model: zai-coding-plan/glm-5`
+7. `.opencode/agents/product-manager.md` - Added `model: zai-coding-plan/glm-5`
+8. `.opencode/agents/orchestrator.md` - Added `model: zai-coding-plan/glm-5`
+9. `.opencode/agents/planner.md` - Added `model: zai-coding-plan/glm-5`
+10. `.opencode/agents/development-team-lead.md` - Added `model: zai-coding-plan/glm-5`
+
+**Verification:**
+```bash
+$ grep -l "^model:" .opencode/agents/*.md | wc -l
+10
+```
+
+### Key Learning
+
+When using custom agent definitions with opencode CLI:
+1. **Always specify the `model:` field** in agent frontmatter to avoid relying on hardcoded defaults
+2. The opencode CLI has internal default model mappings for certain agent types that may reference non-existent providers
+3. The `opencode.json` `model` field only applies to the default agent, not to custom agents
+
+### Next Steps
+
+1. Commit the agent model fixes to the repository
+2. Re-run the `project-setup` workflow to verify the fix
+3. Consider adding a lint rule to check for missing `model:` fields in agent definitions
