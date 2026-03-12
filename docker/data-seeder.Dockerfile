@@ -6,15 +6,15 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy project files
-COPY ["ConvoContentBuddy.Data.Seeder/ConvoContentBuddy.Data.Seeder.csproj", "ConvoContentBuddy.Data.Seeder/"]
-COPY ["ConvoContentBuddy.ServiceDefaults/ConvoContentBuddy.ServiceDefaults.csproj", "ConvoContentBuddy.ServiceDefaults/"]
+COPY ["src/ConvoContentBuddy.Data.Seeder/ConvoContentBuddy.Data.Seeder.csproj", "ConvoContentBuddy.Data.Seeder/"]
+COPY ["src/ConvoContentBuddy.ServiceDefaults/ConvoContentBuddy.ServiceDefaults.csproj", "ConvoContentBuddy.ServiceDefaults/"]
 
 # Restore dependencies
 RUN dotnet restore "ConvoContentBuddy.Data.Seeder/ConvoContentBuddy.Data.Seeder.csproj"
 
 # Copy source code
-COPY ConvoContentBuddy.Data.Seeder/ ConvoContentBuddy.Data.Seeder/
-COPY ConvoContentBuddy.ServiceDefaults/ ConvoContentBuddy.ServiceDefaults/
+COPY src/ConvoContentBuddy.Data.Seeder/ ConvoContentBuddy.Data.Seeder/
+COPY src/ConvoContentBuddy.ServiceDefaults/ ConvoContentBuddy.ServiceDefaults/
 
 # Build
 WORKDIR "/src/ConvoContentBuddy.Data.Seeder"

@@ -56,11 +56,13 @@ services:
       - convocontentbuddy-network
 
   # API Brain Service (with TMR - 3 replicas)
+  # Note: `deploy.replicas` is honored in Docker Swarm mode only.
+  # For local non-Swarm testing, use: docker compose up --scale api-brain=3
   api-brain:
     build:
       context: .
       dockerfile: docker/api-brain.Dockerfile
-    container_name: convocontentbuddy-api-brain
+    # container_name is intentionally omitted to allow --scale to create multiple instances
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5000

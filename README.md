@@ -157,7 +157,7 @@ ConvoContentBuddy includes comprehensive observability out of the box:
 - **Distributed Tracing**: OpenTelemetry traces across all services
 - **Metrics**: Performance counters and custom metrics
 - **Health Checks**: Kubernetes-ready health endpoints
-- **Logging**: Structured logging with Serilog
+- **Logging**: Structured logging integrated with OpenTelemetry and .NET logging
 
 Access the Aspire Dashboard for real-time monitoring at `http://localhost:15000` when running with Aspire.
 

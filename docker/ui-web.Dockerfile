@@ -3,13 +3,13 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
 # Copy project files
-COPY ["ConvoContentBuddy.UI.Web/ConvoContentBuddy.UI.Web.csproj", "ConvoContentBuddy.UI.Web/"]
+COPY ["src/ConvoContentBuddy.UI.Web/ConvoContentBuddy.UI.Web.csproj", "ConvoContentBuddy.UI.Web/"]
 
 # Restore dependencies
 RUN dotnet restore "ConvoContentBuddy.UI.Web/ConvoContentBuddy.UI.Web.csproj"
 
 # Copy source code
-COPY ConvoContentBuddy.UI.Web/ ConvoContentBuddy.UI.Web/
+COPY src/ConvoContentBuddy.UI.Web/ ConvoContentBuddy.UI.Web/
 
 # Build and publish
 WORKDIR "/src/ConvoContentBuddy.UI.Web"
