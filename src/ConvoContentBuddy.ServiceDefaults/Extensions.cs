@@ -52,6 +52,12 @@ public static class Extensions
         return builder;
     }
 
+    /// <summary>
+    /// Configures OpenTelemetry logging, metrics, and tracing for the application.
+    /// </summary>
+    /// <typeparam name="TBuilder">The type of application builder.</typeparam>
+    /// <param name="builder">The application builder.</param>
+    /// <returns>The configured application builder.</returns>
     public static TBuilder ConfigureOpenTelemetry<TBuilder>(this TBuilder builder) where TBuilder : IHostApplicationBuilder
     {
         builder.Logging.AddOpenTelemetry(logging =>
@@ -140,9 +146,6 @@ public static class Extensions
                 Predicate = r => r.Tags.Contains("live")
             });
         }
-
-        return app;
-    }
 
         return app;
     }
