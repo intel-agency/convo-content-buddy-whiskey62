@@ -1,0 +1,144 @@
+version: '3.9'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: convocontentbuddy-postgres
+    environment:
+      POSTGRES_DB: convocontentbuddy
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/init-scripts/postgres:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - convocontentbuddy-network
+
+  # Qdrant Vector Database
+  qdrant:
+    image: qdrant/qdrant:v1.12.0
+    container_name: convocontentbuddy-qdrant
+    ports:
+      - "6333:6333"  # HTTP API
+      - "6334:6334"  # gRPC API
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - convocontentbuddy-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: convocontentbuddy-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - convocontentbuddy-network
+
+  # API Brain Service (with TMR - 3 replicas)
+  api-brain:
+    build:
+      context: .
+      dockerfile: docker/api-brain.Dockerfile
+    container_name: convocontentbuddy-api-brain
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:5000
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ConnectionStrings__PostgreSQL=Host=postgres;Database=convocontentbuddy;Username=postgres;Password=postgres
+      - Qdrant__Host=qdrant
+      - Qdrant__Port=6334
+      - Redis__ConnectionString=redis:6379
+    ports:
+      - "5000:5000"
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - convocontentbuddy-network
+
+  # Data Seeder Worker (for initial setup)
+  data-seeder:
+    build:
+      context: .
+      dockerfile: docker/data-seeder.Dockerfile
+    container_name: convocontentbuddy-data-seeder
+    environment:
+      - DOTNET_ENVIRONMENT=Development
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ConnectionStrings__PostgreSQL=Host=postgres;Database=convocontentbuddy;Username=postgres;Password=postgres
+      - Qdrant__Host=qdrant
+      - Qdrant__Port=6334
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data:ro
+    networks:
+      - convocontentbuddy-network
+    profiles:
+      - seeding
+
+  # Blazor WASM UI
+  ui-web:
+    build:
+      context: .
+      dockerfile: docker/ui-web.Dockerfile
+    container_name: convocontentbuddy-ui-web
+    ports:
+      - "8080:80"
+    depends_on:
+      - api-brain
+    networks:
+      - convocontentbuddy-network
+
+volumes:
+  postgres-data:
+    driver: local
+  qdrant-data:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  convocontentbuddy-network:
+    driver: bridge
