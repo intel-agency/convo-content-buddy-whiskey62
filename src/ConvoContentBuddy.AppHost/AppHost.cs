@@ -1,6 +1,6 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var geminiApiKey = builder.AddParameter("GEMINI_API_KEY", secret: true);
+var geminiApiKey = builder.AddParameterFromConfiguration("GEMINI_API_KEY", "GEMINI_API_KEY", secret: true);
 
 var postgres = builder.AddPostgres("postgres")
     .WithImage("pgvector/pgvector")

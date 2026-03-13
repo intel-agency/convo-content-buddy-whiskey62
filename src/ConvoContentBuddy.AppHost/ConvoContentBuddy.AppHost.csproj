@@ -11,6 +11,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" Version="13.1.1" />
+    <PackageReference Include="Aspire.Hosting.Redis" Version="13.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ConvoContentBuddy.ServiceDefaults\ConvoContentBuddy.ServiceDefaults.csproj" />
     <ProjectReference Include="..\ConvoContentBuddy.API.Brain\ConvoContentBuddy.API.Brain.csproj" />
     <ProjectReference Include="..\ConvoContentBuddy.UI.Web\ConvoContentBuddy.UI.Web.csproj" />
