@@ -52,6 +52,6 @@ jobs:
         with:
           subFolder: .github
           imageName: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          cacheFrom: ${{ env.REGISTRY }}/${{ github.repository }}
+          cacheFrom: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           imageTag: ${{ steps.image-tags.outputs.latest_tag }},${{ steps.image-tags.outputs.versioned_tag }}
           push: always
