@@ -113,4 +113,41 @@ public sealed class LeetCodeQuestionDetailDto
     public string? Content { get; set; }
 }
 
+/// <summary>
+/// Captures the raw JSON response bodies returned by the LeetCode GraphQL API before any
+/// deserialization, so that unmapped or future fields are never discarded during the
+/// snapshot round-trip. The <see cref="MappedNodes"/> property is populated at runtime
+/// for live-path efficiency but is not persisted to the snapshot store.
+/// </summary>
+public sealed class LeetCodeRawCaptureDto
+{
+    /// <summary>
+    /// Gets or sets the raw JSON response body for each paginated catalog query, in fetch order.
+    /// Each entry is the full GraphQL response envelope for one catalog page.
+    /// </summary>
+    [JsonPropertyName("rawCatalogPages")]
+    public List<string> RawCatalogPages { get; set; } = [];
 
+    /// <summary>
+    /// Gets or sets the raw JSON response body for each per-problem detail query,
+    /// keyed by the problem's <c>titleSlug</c>.
+    /// </summary>
+    [JsonPropertyName("rawDetailResponses")]
+    public Dictionary<string, string> RawDetailResponses { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the total number of problems captured. Persisted to the snapshot
+    /// so <see cref="Data.Entities.IngestionSnapshot.ProblemCount"/> is populated on replay.
+    /// </summary>
+    [JsonPropertyName("totalCount")]
+    public int TotalCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the pre-mapped question nodes built during the live fetch. This property
+    /// is populated by <see cref="Services.LeetCodeGraphQlClient"/> for runtime efficiency and
+    /// is intentionally excluded from snapshot serialization — replay reconstructs problem data
+    /// directly from <see cref="RawCatalogPages"/> and <see cref="RawDetailResponses"/>.
+    /// </summary>
+    [JsonIgnore]
+    public List<LeetCodeQuestionNodeDto> MappedNodes { get; set; } = [];
+}

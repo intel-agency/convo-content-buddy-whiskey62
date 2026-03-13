@@ -11,20 +11,23 @@ public interface ILeetCodeGraphQlClient
     /// <summary>
     /// Fetches all problems from the LeetCode GraphQL catalog endpoint by paginating
     /// through the full result set, then enriches each item with its per-problem content
-    /// fetched from the detail query.
+    /// fetched from the detail query. Raw response JSON for every catalog page and every
+    /// detail query is captured before deserialization so that unmapped GraphQL fields are
+    /// not discarded during the snapshot round-trip.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// The full <see cref="LeetCodeCatalogResponseDto"/> GraphQL envelope with all paginated
-    /// questions aggregated under <c>data.problemsetQuestionList</c> and <c>Content</c>
-    /// populated on every node from the per-problem detail query.
+    /// A <see cref="LeetCodeRawCaptureDto"/> containing the raw JSON response bodies for all
+    /// catalog pages and per-problem detail queries, alongside a pre-mapped
+    /// <see cref="LeetCodeRawCaptureDto.MappedNodes"/> list with <c>Content</c> populated on
+    /// every entry for use during the live processing path.
     /// </returns>
     /// <exception cref="System.Net.Http.HttpRequestException">
     /// Thrown when the GraphQL response contains <c>errors</c>, when
     /// <c>problemsetQuestionList</c> / <c>questions</c> is missing on any page, or when
     /// any per-problem detail fetch fails (GraphQL errors, null content, or exhausted retries).
     /// </exception>
-    Task<LeetCodeCatalogResponseDto> FetchAllProblemsAsync(CancellationToken cancellationToken = default);
+    Task<LeetCodeRawCaptureDto> FetchAllProblemsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Fetches the HTML content string for a single problem identified by its slug.

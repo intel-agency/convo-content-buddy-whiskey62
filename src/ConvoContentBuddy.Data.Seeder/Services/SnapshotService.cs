@@ -39,18 +39,17 @@ public sealed class SnapshotService : ISnapshotService
 
     /// <inheritdoc/>
     public async Task PersistSnapshotAsync(
-        LeetCodeCatalogResponseDto catalogResponse,
+        LeetCodeRawCaptureDto rawCapture,
         CancellationToken cancellationToken = default)
     {
-        var payload = JsonSerializer.Serialize(catalogResponse, JsonOptions);
-        var problemCount = catalogResponse.Data?.ProblemsetQuestionList?.Questions?.Count ?? 0;
+        var payload = JsonSerializer.Serialize(rawCapture, JsonOptions);
 
         var snapshot = new IngestionSnapshot
         {
             Id = Guid.NewGuid(),
             Source = SourceIdentifier,
             CapturedAt = DateTimeOffset.UtcNow,
-            ProblemCount = problemCount,
+            ProblemCount = rawCapture.TotalCount,
             Payload = payload,
             IsLatest = false
         };
@@ -64,7 +63,7 @@ public sealed class SnapshotService : ISnapshotService
     }
 
     /// <inheritdoc/>
-    public async Task<LeetCodeCatalogResponseDto?> LoadLatestSnapshotAsync(
+    public async Task<LeetCodeRawCaptureDto?> LoadLatestSnapshotAsync(
         CancellationToken cancellationToken = default)
     {
         var snapshot = await _snapshotRepository
@@ -77,12 +76,12 @@ public sealed class SnapshotService : ISnapshotService
             return null;
         }
 
-        var catalogResponse = JsonSerializer.Deserialize<LeetCodeCatalogResponseDto>(snapshot.Payload, JsonOptions);
+        var rawCapture = JsonSerializer.Deserialize<LeetCodeRawCaptureDto>(snapshot.Payload, JsonOptions);
 
         _logger.LogInformation(
             "Loaded snapshot {SnapshotId} captured at {CapturedAt} with {Count} catalog nodes",
             snapshot.Id, snapshot.CapturedAt, snapshot.ProblemCount);
 
-        return catalogResponse;
+        return rawCapture;
     }
 }

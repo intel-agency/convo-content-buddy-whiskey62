@@ -9,8 +9,8 @@ using Moq;
 namespace ConvoContentBuddy.Tests.Ingestion;
 
 /// <summary>
-/// Unit tests for <see cref="SnapshotService"/> covering persistence and retrieval of the full
-/// GraphQL catalog envelope.
+/// Unit tests for <see cref="SnapshotService"/> covering persistence and retrieval of the raw
+/// GraphQL capture including unmapped field survival through the snapshot round-trip.
 /// </summary>
 public class SnapshotServiceTests
 {
@@ -19,8 +19,43 @@ public class SnapshotServiceTests
     private static SnapshotService CreateService(Mock<ISnapshotRepository> repoMock)
         => new(repoMock.Object, NullLogger<SnapshotService>.Instance);
 
-    private static List<LeetCodeQuestionNodeDto> BuildNodes(int count = 2, bool withContent = true)
-        => Enumerable.Range(1, count)
+    private static LeetCodeRawCaptureDto BuildCapture(
+        int nodeCount = 2,
+        bool withContent = true,
+        Dictionary<string, object>? extraCatalogFields = null)
+    {
+        var nodes = Enumerable.Range(1, nodeCount)
+            .Select(i => (object)new
+            {
+                titleSlug = $"slug-{i}",
+                frontendQuestionId = i.ToString(),
+                title = $"Problem {i}",
+                difficulty = "Easy",
+                topicTags = new[] { new { name = "Array", slug = "array" } }
+            })
+            .ToList();
+
+        var catalogData = new Dictionary<string, object>
+        {
+            ["data"] = new Dictionary<string, object>
+            {
+                ["problemsetQuestionList"] = BuildQuestionListObject(nodeCount, nodes, extraCatalogFields)
+            }
+        };
+        var rawCatalogPage = JsonSerializer.Serialize(catalogData);
+
+        var rawDetailResponses = Enumerable.Range(1, nodeCount)
+            .ToDictionary(
+                i => $"slug-{i}",
+                i => JsonSerializer.Serialize(new
+                {
+                    data = new
+                    {
+                        question = new { content = withContent ? $"<p>Content {i}</p>" : (string?)null }
+                    }
+                }));
+
+        var mappedNodes = Enumerable.Range(1, nodeCount)
             .Select(i => new LeetCodeQuestionNodeDto
             {
                 TitleSlug = $"slug-{i}",
@@ -32,29 +67,42 @@ public class SnapshotServiceTests
             })
             .ToList();
 
-    private static LeetCodeCatalogResponseDto BuildCatalogResponse(int total, List<LeetCodeQuestionNodeDto> questions)
-        => new()
+        return new LeetCodeRawCaptureDto
         {
-            Data = new LeetCodeCatalogDataDto
-            {
-                ProblemsetQuestionList = new LeetCodeQuestionListDto
-                {
-                    Total = total,
-                    Questions = questions
-                }
-            }
+            RawCatalogPages = [rawCatalogPage],
+            RawDetailResponses = rawDetailResponses,
+            TotalCount = nodeCount,
+            MappedNodes = mappedNodes
         };
+    }
+
+    private static object BuildQuestionListObject(
+        int total,
+        IEnumerable<object> questions,
+        Dictionary<string, object>? extraFields)
+    {
+        var dict = new Dictionary<string, object>
+        {
+            ["total"] = total,
+            ["questions"] = questions
+        };
+        if (extraFields is not null)
+        {
+            foreach (var kv in extraFields)
+                dict[kv.Key] = kv.Value;
+        }
+        return dict;
+    }
 
     /// <summary>
-    /// Verifies that <c>PersistSnapshotAsync</c> serializes the full GraphQL catalog envelope
-    /// (including the <c>data.problemsetQuestionList</c> wrapper, total count, and Content on
-    /// each node) and calls both repository methods with correctly populated data.
+    /// Verifies that <c>PersistSnapshotAsync</c> serializes the raw capture (including
+    /// <c>rawCatalogPages</c>, <c>rawDetailResponses</c>, and <c>totalCount</c>) and calls
+    /// both repository methods with correctly populated data.
     /// </summary>
     [Fact]
     public async Task PersistSnapshotAsync_CallsRepositoryWithCorrectData()
     {
-        var nodes = BuildNodes(3, withContent: true);
-        var catalogResponse = BuildCatalogResponse(nodes.Count, nodes);
+        var capture = BuildCapture(3, withContent: true);
         IngestionSnapshot? capturedSnapshot = null;
 
         var repo = new Mock<ISnapshotRepository>();
@@ -65,34 +113,33 @@ public class SnapshotServiceTests
             .Returns(Task.CompletedTask);
 
         var service = CreateService(repo);
-        await service.PersistSnapshotAsync(catalogResponse);
+        await service.PersistSnapshotAsync(capture);
 
         capturedSnapshot.Should().NotBeNull();
         capturedSnapshot!.Source.Should().Be(SnapshotService.SourceIdentifier);
         capturedSnapshot.ProblemCount.Should().Be(3);
 
-        // Payload must round-trip as the full GraphQL envelope preserving data.problemsetQuestionList and Content
-        var deserialized = JsonSerializer.Deserialize<LeetCodeCatalogResponseDto>(capturedSnapshot.Payload, JsonOpts);
+        // Payload must round-trip as LeetCodeRawCaptureDto with raw pages and detail responses
+        var deserialized = JsonSerializer.Deserialize<LeetCodeRawCaptureDto>(capturedSnapshot.Payload, JsonOpts);
         deserialized.Should().NotBeNull();
-        deserialized!.Data.Should().NotBeNull();
-        deserialized.Data!.ProblemsetQuestionList.Should().NotBeNull();
-        deserialized.Data.ProblemsetQuestionList!.Total.Should().Be(3);
-        deserialized.Data.ProblemsetQuestionList.Questions.Should().HaveCount(3);
-        deserialized.Data.ProblemsetQuestionList.Questions[0].TitleSlug.Should().Be("slug-1");
-        deserialized.Data.ProblemsetQuestionList.Questions[0].Content.Should().Be("<p>Content 1</p>");
+        deserialized!.RawCatalogPages.Should().HaveCount(1);
+        deserialized.RawDetailResponses.Should().HaveCount(3);
+        deserialized.TotalCount.Should().Be(3);
+
+        // MappedNodes is [JsonIgnore] and must not be persisted
+        deserialized.MappedNodes.Should().BeEmpty();
 
         repo.Verify(r => r.MarkAsLatestAsync(capturedSnapshot.Id, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     /// <summary>
-    /// Verifies that the persisted payload contains the full GraphQL envelope structure with
-    /// the <c>data.problemsetQuestionList</c> wrapper, not a flat reconstructed object.
+    /// Verifies that the persisted payload contains the raw catalog page JSON strings,
+    /// not a reconstructed DTO, so the original GraphQL response shape is preserved.
     /// </summary>
     [Fact]
-    public async Task PersistSnapshotAsync_PayloadContainsGraphQlEnvelope()
+    public async Task PersistSnapshotAsync_PayloadContainsRawCatalogPageJson()
     {
-        var nodes = BuildNodes(2, withContent: true);
-        var catalogResponse = BuildCatalogResponse(42, nodes);
+        var capture = BuildCapture(2, withContent: true);
 
         IngestionSnapshot? capturedSnapshot = null;
         var repo = new Mock<ISnapshotRepository>();
@@ -103,38 +150,119 @@ public class SnapshotServiceTests
             .Returns(Task.CompletedTask);
 
         var service = CreateService(repo);
-        await service.PersistSnapshotAsync(catalogResponse);
+        await service.PersistSnapshotAsync(capture);
 
         capturedSnapshot.Should().NotBeNull();
-
-        // The payload must contain the data.problemsetQuestionList envelope, not a flat { total, questions } object
         using var doc = JsonDocument.Parse(capturedSnapshot!.Payload);
         doc.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
-        doc.RootElement.TryGetProperty("data", out var dataProp).Should().BeTrue();
-        dataProp.TryGetProperty("problemsetQuestionList", out var pqlProp).Should().BeTrue();
-        pqlProp.TryGetProperty("total", out var totalProp).Should().BeTrue();
-        totalProp.GetInt32().Should().Be(42);
-        pqlProp.TryGetProperty("questions", out _).Should().BeTrue();
+        doc.RootElement.TryGetProperty("rawCatalogPages", out var pagesProp).Should().BeTrue();
+        pagesProp.GetArrayLength().Should().Be(1);
+        doc.RootElement.TryGetProperty("rawDetailResponses", out var detailProp).Should().BeTrue();
+        doc.RootElement.TryGetProperty("totalCount", out var countProp).Should().BeTrue();
+        countProp.GetInt32().Should().Be(2);
     }
 
     /// <summary>
-    /// Verifies that when a snapshot exists, the full GraphQL catalog envelope (including
-    /// <c>data.problemsetQuestionList</c>, total count, and Content on each node) is correctly
-    /// deserialized and returned.
+    /// Verifies that extra/unmapped JSON fields present in the raw catalog page survive the
+    /// full persist-then-load snapshot round-trip without being dropped.
     /// </summary>
     [Fact]
-    public async Task LoadLatestSnapshotAsync_WhenSnapshotExists_ReturnsDeserializedEnvelope()
+    public async Task PersistAndLoad_UnmappedFieldsInRawCatalogPageSurviveRoundTrip()
     {
-        var nodes = BuildNodes(2, withContent: true);
-        var catalogResponse = BuildCatalogResponse(99, nodes);
-        var payload = JsonSerializer.Serialize(catalogResponse, JsonOpts);
+        // Build a raw catalog page that contains an extra field not modeled in any DTO.
+        var nodeWithExtraField = new
+        {
+            titleSlug = "two-sum",
+            frontendQuestionId = "1",
+            title = "Two Sum",
+            difficulty = "Easy",
+            topicTags = new[] { new { name = "Array", slug = "array" } },
+            premiumOnly = true  // unmapped — must survive round-trip
+        };
+        var rawCatalogPage = JsonSerializer.Serialize(new
+        {
+            data = new
+            {
+                problemsetQuestionList = new
+                {
+                    total = 1,
+                    questions = new[] { nodeWithExtraField }
+                }
+            }
+        });
+
+        var capture = new LeetCodeRawCaptureDto
+        {
+            RawCatalogPages = [rawCatalogPage],
+            RawDetailResponses = new Dictionary<string, string>
+            {
+                ["two-sum"] = JsonSerializer.Serialize(new { data = new { question = new { content = "<p>x</p>" } } })
+            },
+            TotalCount = 1
+        };
+
+        IngestionSnapshot? capturedSnapshot = null;
+        var repo = new Mock<ISnapshotRepository>();
+        repo.Setup(r => r.PersistSnapshotAsync(It.IsAny<IngestionSnapshot>(), It.IsAny<CancellationToken>()))
+            .Callback<IngestionSnapshot, CancellationToken>((s, _) => capturedSnapshot = s)
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.MarkAsLatestAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var service = CreateService(repo);
+        await service.PersistSnapshotAsync(capture);
+
+        // Simulate load from the persisted snapshot
+        var persistedSnapshot = new IngestionSnapshot
+        {
+            Id = capturedSnapshot!.Id,
+            Source = SnapshotService.SourceIdentifier,
+            CapturedAt = capturedSnapshot.CapturedAt,
+            ProblemCount = capturedSnapshot.ProblemCount,
+            Payload = capturedSnapshot.Payload,
+            IsLatest = true
+        };
+        repo.Setup(r => r.LoadLatestAsync(SnapshotService.SourceIdentifier, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(persistedSnapshot);
+
+        var loaded = await service.LoadLatestSnapshotAsync();
+
+        loaded.Should().NotBeNull();
+        loaded!.RawCatalogPages.Should().HaveCount(1);
+
+        // The unmapped 'premiumOnly' field must be present in the raw page JSON
+        using var doc = JsonDocument.Parse(loaded.RawCatalogPages[0]);
+        var questionEl = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("problemsetQuestionList")
+            .GetProperty("questions")[0];
+        questionEl.TryGetProperty("premiumOnly", out var premiumProp).Should().BeTrue(
+            "unmapped field 'premiumOnly' must survive the snapshot persist+load round-trip");
+        premiumProp.GetBoolean().Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Verifies that when a snapshot exists, the raw capture (including catalog pages and
+    /// detail responses) is correctly deserialized and returned.
+    /// </summary>
+    [Fact]
+    public async Task LoadLatestSnapshotAsync_WhenSnapshotExists_ReturnsDeserializedCapture()
+    {
+        var capture = BuildCapture(2, withContent: true);
+        // Remove MappedNodes before serializing (as happens during persist)
+        var payload = JsonSerializer.Serialize(new LeetCodeRawCaptureDto
+        {
+            RawCatalogPages = capture.RawCatalogPages,
+            RawDetailResponses = capture.RawDetailResponses,
+            TotalCount = capture.TotalCount
+        }, JsonOpts);
 
         var snapshot = new IngestionSnapshot
         {
             Id = Guid.NewGuid(),
             Source = SnapshotService.SourceIdentifier,
             CapturedAt = DateTimeOffset.UtcNow.AddHours(-1),
-            ProblemCount = nodes.Count,
+            ProblemCount = capture.TotalCount,
             Payload = payload,
             IsLatest = true
         };
@@ -147,14 +275,21 @@ public class SnapshotServiceTests
         var result = await service.LoadLatestSnapshotAsync();
 
         result.Should().NotBeNull();
-        result!.Data.Should().NotBeNull();
-        result.Data!.ProblemsetQuestionList.Should().NotBeNull();
-        result.Data.ProblemsetQuestionList!.Total.Should().Be(99);
-        result.Data.ProblemsetQuestionList.Questions.Should().HaveCount(2);
-        result.Data.ProblemsetQuestionList.Questions[0].TitleSlug.Should().Be("slug-1");
-        result.Data.ProblemsetQuestionList.Questions[0].Content.Should().Be("<p>Content 1</p>");
-        result.Data.ProblemsetQuestionList.Questions[1].TitleSlug.Should().Be("slug-2");
-        result.Data.ProblemsetQuestionList.Questions[1].Content.Should().Be("<p>Content 2</p>");
+        result!.RawCatalogPages.Should().HaveCount(1);
+        result.RawDetailResponses.Should().ContainKey("slug-1");
+        result.RawDetailResponses.Should().ContainKey("slug-2");
+        result.TotalCount.Should().Be(2);
+        // MappedNodes is [JsonIgnore] and should be empty on replay
+        result.MappedNodes.Should().BeEmpty();
+
+        // Verify raw detail contains the expected content
+        using var detailDoc = JsonDocument.Parse(result.RawDetailResponses["slug-1"]);
+        detailDoc.RootElement
+            .GetProperty("data")
+            .GetProperty("question")
+            .GetProperty("content")
+            .GetString()
+            .Should().Be("<p>Content 1</p>");
     }
 
     /// <summary>

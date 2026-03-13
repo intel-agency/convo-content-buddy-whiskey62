@@ -142,7 +142,7 @@ public class LeetCodeGraphQlClientTests
         var client = CreateClientWithOptions(handler, new LeetCodeClientOptions { DelayBetweenRequestsMs = 0, PageSize = 100 });
         var result = await client.FetchAllProblemsAsync();
 
-        var questions = result.Data!.ProblemsetQuestionList!.Questions;
+        var questions = result.MappedNodes;
         questions.Should().HaveCount(2);
         questions[0].TitleSlug.Should().Be("two-sum");
         questions[0].QuestionFrontendId.Should().Be("1");
@@ -176,8 +176,125 @@ public class LeetCodeGraphQlClientTests
         var client = CreateClientWithOptions(handler, new LeetCodeClientOptions { DelayBetweenRequestsMs = 0, PageSize = 100 });
         var result = await client.FetchAllProblemsAsync();
 
-        result.Data!.ProblemsetQuestionList!.Questions.Should().HaveCount(1);
-        result.Data.ProblemsetQuestionList.Questions[0].Content.Should().Be(expectedContent);
+        result.MappedNodes.Should().HaveCount(1);
+        result.MappedNodes[0].Content.Should().Be(expectedContent);
+    }
+
+    /// <summary>
+    /// Verifies that the raw catalog page JSON is captured before deserialization, preserving
+    /// any fields (including those not modeled in a DTO) exactly as returned by the API.
+    /// </summary>
+    [Fact]
+    public async Task FetchAllProblemsAsync_PreservesRawCatalogPageJson()
+    {
+        const string unmappedField = "premiumOnly";
+        var catalogBody = new
+        {
+            data = new
+            {
+                problemsetQuestionList = new
+                {
+                    total = 1,
+                    questions = new[]
+                    {
+                        new
+                        {
+                            titleSlug = "two-sum",
+                            frontendQuestionId = "1",
+                            title = "Two Sum",
+                            difficulty = "Easy",
+                            topicTags = new[] { new { name = "Array", slug = "array" } },
+                            premiumOnly = true  // unmapped field — must survive in raw capture
+                        }
+                    }
+                }
+            }
+        };
+
+        var handler = new Mock<HttpMessageHandler>();
+        SetupDispatchedHandler(handler, req =>
+            IsCatalogRequest(req)
+                ? JsonResponse(catalogBody)
+                : JsonResponse(BuildDetailResponse("<p>content</p>")));
+
+        var client = CreateClientWithOptions(handler, new LeetCodeClientOptions { DelayBetweenRequestsMs = 0, PageSize = 100 });
+        var result = await client.FetchAllProblemsAsync();
+
+        result.RawCatalogPages.Should().HaveCount(1);
+        using var doc = JsonDocument.Parse(result.RawCatalogPages[0]);
+        var questionEl = doc.RootElement
+            .GetProperty("data")
+            .GetProperty("problemsetQuestionList")
+            .GetProperty("questions")[0];
+        questionEl.TryGetProperty(unmappedField, out var premiumProp).Should().BeTrue(
+            "unmapped field '{0}' must be present in the raw catalog page JSON", unmappedField);
+        premiumProp.GetBoolean().Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Verifies that the raw detail response JSON is captured per problem slug, preserving
+    /// any fields (including those not modeled in a DTO) exactly as returned by the API.
+    /// </summary>
+    [Fact]
+    public async Task FetchAllProblemsAsync_PreservesRawDetailResponseJson()
+    {
+        const string unmappedField = "hints";
+        var catalogBody = BuildCatalogResponse(1, new[]
+        {
+            BuildQuestion("two-sum", "1", "Two Sum", "Easy")
+        });
+        var detailBody = new
+        {
+            data = new
+            {
+                question = new
+                {
+                    content = "<p>content</p>",
+                    hints = new[] { "Use a hash map" }  // unmapped detail field
+                }
+            }
+        };
+
+        var handler = new Mock<HttpMessageHandler>();
+        SetupDispatchedHandler(handler, req =>
+            IsCatalogRequest(req)
+                ? JsonResponse(catalogBody)
+                : JsonResponse(detailBody));
+
+        var client = CreateClientWithOptions(handler, new LeetCodeClientOptions { DelayBetweenRequestsMs = 0, PageSize = 100 });
+        var result = await client.FetchAllProblemsAsync();
+
+        result.RawDetailResponses.Should().ContainKey("two-sum");
+        using var doc = JsonDocument.Parse(result.RawDetailResponses["two-sum"]);
+        var questionEl = doc.RootElement.GetProperty("data").GetProperty("question");
+        questionEl.TryGetProperty(unmappedField, out var hintsProp).Should().BeTrue(
+            "unmapped field '{0}' must be present in the raw detail response JSON", unmappedField);
+        hintsProp.GetArrayLength().Should().Be(1);
+    }
+
+    /// <summary>
+    /// Verifies that TotalCount and MappedNodes count are set correctly in the returned capture.
+    /// </summary>
+    [Fact]
+    public async Task FetchAllProblemsAsync_SetsTotalCountAndMappedNodes()
+    {
+        var catalogBody = BuildCatalogResponse(2, new[]
+        {
+            BuildQuestion("two-sum", "1", "Two Sum", "Easy"),
+            BuildQuestion("add-two-numbers", "2", "Add Two Numbers", "Medium")
+        });
+
+        var handler = new Mock<HttpMessageHandler>();
+        SetupDispatchedHandler(handler, req =>
+            IsCatalogRequest(req)
+                ? JsonResponse(catalogBody)
+                : JsonResponse(BuildDetailResponse("<p>content</p>")));
+
+        var client = CreateClientWithOptions(handler, new LeetCodeClientOptions { DelayBetweenRequestsMs = 0, PageSize = 100 });
+        var result = await client.FetchAllProblemsAsync();
+
+        result.TotalCount.Should().Be(2);
+        result.MappedNodes.Should().HaveCount(2);
     }
 
     /// <summary>
@@ -216,7 +333,7 @@ public class LeetCodeGraphQlClientTests
 
         var result = await client.FetchAllProblemsAsync();
 
-        result.Data!.ProblemsetQuestionList!.Questions.Should().HaveCount(3);
+        result.MappedNodes.Should().HaveCount(3);
         // 2 catalog pages + 3 detail requests = 5 total
         handler.Protected().Verify(
             "SendAsync",
@@ -285,7 +402,7 @@ public class LeetCodeGraphQlClientTests
 
         var result = await client.FetchAllProblemsAsync();
 
-        result.Data!.ProblemsetQuestionList!.Questions.Should().HaveCount(1);
+        result.MappedNodes.Should().HaveCount(1);
         // 2 catalog requests (1 retry) + 1 detail request = 3 total
         handler.Protected().Verify(
             "SendAsync",
@@ -325,7 +442,7 @@ public class LeetCodeGraphQlClientTests
 
         var result = await client.FetchAllProblemsAsync();
 
-        result.Data!.ProblemsetQuestionList!.Questions.Should().HaveCount(1);
+        result.MappedNodes.Should().HaveCount(1);
     }
 
     /// <summary>

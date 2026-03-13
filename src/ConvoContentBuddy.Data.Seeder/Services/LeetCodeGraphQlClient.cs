@@ -69,11 +69,12 @@ public sealed class LeetCodeGraphQlClient : ILeetCodeGraphQlClient
     }
 
     /// <inheritdoc/>
-    public async Task<LeetCodeCatalogResponseDto> FetchAllProblemsAsync(CancellationToken cancellationToken = default)
+    public async Task<LeetCodeRawCaptureDto> FetchAllProblemsAsync(CancellationToken cancellationToken = default)
     {
         var pageSize = _options.PageSize > 0 ? _options.PageSize : DefaultPageSize;
         var delayMs = _options.DelayBetweenRequestsMs > 0 ? _options.DelayBetweenRequestsMs : DefaultDelayMs;
 
+        var capture = new LeetCodeRawCaptureDto();
         var allNodes = new List<LeetCodeQuestionNodeDto>();
         var skip = 0;
         int total;
@@ -90,8 +91,10 @@ public sealed class LeetCodeGraphQlClient : ILeetCodeGraphQlClient
                 filters = new { }
             };
 
-            var response = await ExecuteGraphQlQueryAsync<LeetCodeCatalogResponseDto>(
+            var rawPage = await ExecuteRawGraphQlQueryAsync(
                 CatalogQuery, variables, cancellationToken).ConfigureAwait(false);
+
+            var response = JsonSerializer.Deserialize<LeetCodeCatalogResponseDto>(rawPage, JsonOptions);
 
             if (response?.Errors?.Count > 0)
             {
@@ -113,6 +116,9 @@ public sealed class LeetCodeGraphQlClient : ILeetCodeGraphQlClient
                     $"GraphQL catalog response contained no questions array at skip={skip}");
             }
 
+            // Preserve the raw page JSON before any re-serialization can drop unmapped fields.
+            capture.RawCatalogPages.Add(rawPage);
+
             total = questionList.Total;
             allNodes.AddRange(questionList.Questions);
             _logger.LogDebug("Fetched {Count}/{Total} catalog entries so far", allNodes.Count, total);
@@ -131,8 +137,12 @@ public sealed class LeetCodeGraphQlClient : ILeetCodeGraphQlClient
         for (var i = 0; i < allNodes.Count; i++)
         {
             var node = allNodes[i];
-            node.Content = await FetchProblemContentAsync(node.TitleSlug, cancellationToken)
+            var (content, rawDetail) = await FetchRawDetailAsync(node.TitleSlug, cancellationToken)
                 .ConfigureAwait(false);
+
+            node.Content = content;
+            // Preserve the raw detail response so unmapped fields on the question object survive.
+            capture.RawDetailResponses[node.TitleSlug] = rawDetail;
 
             _logger.LogDebug(
                 "Fetched content for '{TitleSlug}' ({Current}/{Total})",
@@ -144,28 +154,31 @@ public sealed class LeetCodeGraphQlClient : ILeetCodeGraphQlClient
             }
         }
 
-        // Wrap all aggregated pages back into the full GraphQL envelope so the snapshot layer
-        // can persist the original response shape, including the data.problemsetQuestionList
-        // wrapper and any top-level errors field needed for replay or debugging.
-        return new LeetCodeCatalogResponseDto
-        {
-            Data = new LeetCodeCatalogDataDto
-            {
-                ProblemsetQuestionList = new LeetCodeQuestionListDto
-                {
-                    Total = total,
-                    Questions = allNodes
-                }
-            }
-        };
+        capture.MappedNodes = allNodes;
+        capture.TotalCount = allNodes.Count;
+        return capture;
     }
 
     /// <inheritdoc/>
     public async Task<string> FetchProblemContentAsync(string titleSlug, CancellationToken cancellationToken = default)
     {
+        var (content, _) = await FetchRawDetailAsync(titleSlug, cancellationToken).ConfigureAwait(false);
+        return content;
+    }
+
+    /// <summary>
+    /// Fetches the raw detail response for a single problem, returning both the HTML content
+    /// string and the unmodified JSON response body so callers can capture the raw payload.
+    /// </summary>
+    private async Task<(string Content, string RawJson)> FetchRawDetailAsync(
+        string titleSlug,
+        CancellationToken cancellationToken)
+    {
         var variables = new { titleSlug };
-        var response = await ExecuteGraphQlQueryAsync<LeetCodeQuestionDetailResponseDto>(
+        var rawJson = await ExecuteRawGraphQlQueryAsync(
             QuestionDetailQuery, variables, cancellationToken).ConfigureAwait(false);
+
+        var response = JsonSerializer.Deserialize<LeetCodeQuestionDetailResponseDto>(rawJson, JsonOptions);
 
         if (response?.Errors?.Count > 0)
         {
@@ -181,10 +194,19 @@ public sealed class LeetCodeGraphQlClient : ILeetCodeGraphQlClient
                 $"GraphQL detail query returned null content for '{titleSlug}'");
         }
 
-        return content;
+        return (content, rawJson);
     }
 
     private async Task<T?> ExecuteGraphQlQueryAsync<T>(
+        string query,
+        object variables,
+        CancellationToken cancellationToken)
+    {
+        var raw = await ExecuteRawGraphQlQueryAsync(query, variables, cancellationToken).ConfigureAwait(false);
+        return JsonSerializer.Deserialize<T>(raw, JsonOptions);
+    }
+
+    private async Task<string> ExecuteRawGraphQlQueryAsync(
         string query,
         object variables,
         CancellationToken cancellationToken)
@@ -244,8 +266,7 @@ public sealed class LeetCodeGraphQlClient : ILeetCodeGraphQlClient
 
                 response.EnsureSuccessStatusCode();
 
-                var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-                return JsonSerializer.Deserialize<T>(json, JsonOptions);
+                return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (HttpRequestException) when (attempt == maxAttempts)
             {
