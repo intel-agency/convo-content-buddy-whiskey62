@@ -18,8 +18,9 @@ public interface ILeetCodeGraphQlClient
     /// A list of raw <see cref="LeetCodeQuestionNodeDto"/> instances with <c>Content</c> populated.
     /// </returns>
     /// <exception cref="System.Net.Http.HttpRequestException">
-    /// Thrown when the GraphQL response contains <c>errors</c>, or when
-    /// <c>problemsetQuestionList</c> / <c>questions</c> is missing on any page.
+    /// Thrown when the GraphQL response contains <c>errors</c>, when
+    /// <c>problemsetQuestionList</c> / <c>questions</c> is missing on any page, or when
+    /// any per-problem detail fetch fails (GraphQL errors, null content, or exhausted retries).
     /// </exception>
     Task<List<LeetCodeQuestionNodeDto>> FetchAllProblemsAsync(CancellationToken cancellationToken = default);
 
@@ -28,6 +29,10 @@ public interface ILeetCodeGraphQlClient
     /// </summary>
     /// <param name="titleSlug">The URL-friendly title slug of the problem.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The HTML content string, or <c>null</c> if it could not be retrieved.</returns>
-    Task<string?> FetchProblemContentAsync(string titleSlug, CancellationToken cancellationToken = default);
+    /// <returns>The HTML content string. Never returns <c>null</c>.</returns>
+    /// <exception cref="System.Net.Http.HttpRequestException">
+    /// Thrown when the detail query returns GraphQL <c>errors</c>, when the <c>content</c>
+    /// field is <c>null</c> or missing, or when the request fails after all retry attempts.
+    /// </exception>
+    Task<string> FetchProblemContentAsync(string titleSlug, CancellationToken cancellationToken = default);
 }

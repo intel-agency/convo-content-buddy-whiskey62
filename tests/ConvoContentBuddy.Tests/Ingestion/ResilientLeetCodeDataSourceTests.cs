@@ -35,6 +35,9 @@ public class ResilientLeetCodeDataSourceTests
             snapshotMock.Object,
             logger ?? NullLogger<ResilientLeetCodeDataSource>.Instance);
 
+    private static LeetCodeRawCatalogSnapshotDto BuildRawCatalog(IReadOnlyList<LeetCodeQuestionNodeDto> nodes)
+        => new() { Total = nodes.Count, Questions = nodes.ToList() };
+
     /// <summary>
     /// When the live client succeeds, the raw nodes are persisted as a snapshot and the
     /// mapped problems (with Content) are returned.
@@ -49,7 +52,7 @@ public class ResilientLeetCodeDataSourceTests
             .ReturnsAsync(nodes);
 
         var snapshotMock = new Mock<ISnapshotService>();
-        snapshotMock.Setup(s => s.PersistSnapshotAsync(It.IsAny<IReadOnlyList<LeetCodeQuestionNodeDto>>(), It.IsAny<CancellationToken>()))
+        snapshotMock.Setup(s => s.PersistSnapshotAsync(It.IsAny<LeetCodeRawCatalogSnapshotDto>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         var source = CreateSource(clientMock, snapshotMock);
@@ -60,9 +63,37 @@ public class ResilientLeetCodeDataSourceTests
 
         snapshotMock.Verify(
             s => s.PersistSnapshotAsync(
-                It.Is<IReadOnlyList<LeetCodeQuestionNodeDto>>(p => p.Count == 5),
+                It.Is<LeetCodeRawCatalogSnapshotDto>(p => p.Questions.Count == 5),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    /// <summary>
+    /// When the live client succeeds, the snapshot is persisted with the full GraphQL envelope
+    /// including the total count, not just the raw node list.
+    /// </summary>
+    [Fact]
+    public async Task FetchCatalogAsync_LiveSucceeds_PersistsRawEnvelopeWithTotal()
+    {
+        var nodes = BuildNodes(3, withContent: true);
+
+        var clientMock = new Mock<ILeetCodeGraphQlClient>();
+        clientMock.Setup(c => c.FetchAllProblemsAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(nodes);
+
+        LeetCodeRawCatalogSnapshotDto? capturedCatalog = null;
+        var snapshotMock = new Mock<ISnapshotService>();
+        snapshotMock.Setup(s => s.PersistSnapshotAsync(It.IsAny<LeetCodeRawCatalogSnapshotDto>(), It.IsAny<CancellationToken>()))
+            .Callback<LeetCodeRawCatalogSnapshotDto, CancellationToken>((c, _) => capturedCatalog = c)
+            .Returns(Task.CompletedTask);
+
+        var source = CreateSource(clientMock, snapshotMock);
+        await source.FetchCatalogAsync();
+
+        capturedCatalog.Should().NotBeNull();
+        capturedCatalog!.Total.Should().Be(3);
+        capturedCatalog.Questions.Should().HaveCount(3);
+        capturedCatalog.Questions[0].TitleSlug.Should().Be("slug-1");
     }
 
     /// <summary>
@@ -72,6 +103,7 @@ public class ResilientLeetCodeDataSourceTests
     public async Task FetchCatalogAsync_LiveFails_FallsBackToSnapshot()
     {
         var cachedNodes = BuildNodes(3);
+        var cachedCatalog = BuildRawCatalog(cachedNodes);
 
         var clientMock = new Mock<ILeetCodeGraphQlClient>();
         clientMock.Setup(c => c.FetchAllProblemsAsync(It.IsAny<CancellationToken>()))
@@ -79,13 +111,42 @@ public class ResilientLeetCodeDataSourceTests
 
         var snapshotMock = new Mock<ISnapshotService>();
         snapshotMock.Setup(s => s.LoadLatestSnapshotAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(cachedNodes);
+            .ReturnsAsync(cachedCatalog);
 
         var source = CreateSource(clientMock, snapshotMock);
         var result = await source.FetchCatalogAsync();
 
         result.Should().HaveCount(3);
         result[0].TitleSlug.Should().Be("slug-1");
+    }
+
+    /// <summary>
+    /// When the live client fails due to a detail query failure, falls back to snapshot
+    /// and does NOT persist a partial snapshot.
+    /// </summary>
+    [Fact]
+    public async Task FetchCatalogAsync_DetailFetchFails_FallsBackToSnapshotWithoutPersisting()
+    {
+        var cachedNodes = BuildNodes(2, withContent: true);
+        var cachedCatalog = BuildRawCatalog(cachedNodes);
+
+        var clientMock = new Mock<ILeetCodeGraphQlClient>();
+        clientMock.Setup(c => c.FetchAllProblemsAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("GraphQL detail query returned errors for 'slug-1': Problem not available"));
+
+        var snapshotMock = new Mock<ISnapshotService>();
+        snapshotMock.Setup(s => s.LoadLatestSnapshotAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cachedCatalog);
+
+        var source = CreateSource(clientMock, snapshotMock);
+        var result = await source.FetchCatalogAsync();
+
+        result.Should().HaveCount(2);
+
+        // Snapshot must NOT be persisted with incomplete data
+        snapshotMock.Verify(
+            s => s.PersistSnapshotAsync(It.IsAny<LeetCodeRawCatalogSnapshotDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     /// <summary>
@@ -100,7 +161,7 @@ public class ResilientLeetCodeDataSourceTests
 
         var snapshotMock = new Mock<ISnapshotService>();
         snapshotMock.Setup(s => s.LoadLatestSnapshotAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync((IReadOnlyList<LeetCodeQuestionNodeDto>?)null);
+            .ReturnsAsync((LeetCodeRawCatalogSnapshotDto?)null);
 
         var source = CreateSource(clientMock, snapshotMock);
 
@@ -117,6 +178,7 @@ public class ResilientLeetCodeDataSourceTests
     public async Task FetchCatalogAsync_LiveFails_LogsWarning()
     {
         var cachedNodes = BuildNodes(1);
+        var cachedCatalog = BuildRawCatalog(cachedNodes);
 
         var clientMock = new Mock<ILeetCodeGraphQlClient>();
         clientMock.Setup(c => c.FetchAllProblemsAsync(It.IsAny<CancellationToken>()))
@@ -124,7 +186,7 @@ public class ResilientLeetCodeDataSourceTests
 
         var snapshotMock = new Mock<ISnapshotService>();
         snapshotMock.Setup(s => s.LoadLatestSnapshotAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(cachedNodes);
+            .ReturnsAsync(cachedCatalog);
 
         var loggerMock = new Mock<ILogger<ResilientLeetCodeDataSource>>();
 
@@ -143,7 +205,7 @@ public class ResilientLeetCodeDataSourceTests
 
     /// <summary>
     /// Verifies that Content populated on raw nodes during the live fetch is preserved
-    /// through the snapshot persistence and replay cycle.
+    /// through the snapshot persistence and replay cycle, using the raw envelope type.
     /// </summary>
     [Fact]
     public async Task FetchCatalogAsync_ContentIsPreservedThroughSnapshotReplay()
@@ -161,6 +223,7 @@ public class ResilientLeetCodeDataSourceTests
                 Content = expectedContent
             }
         };
+        var cachedCatalog = BuildRawCatalog(cachedNodes);
 
         var clientMock = new Mock<ILeetCodeGraphQlClient>();
         clientMock.Setup(c => c.FetchAllProblemsAsync(It.IsAny<CancellationToken>()))
@@ -168,7 +231,7 @@ public class ResilientLeetCodeDataSourceTests
 
         var snapshotMock = new Mock<ISnapshotService>();
         snapshotMock.Setup(s => s.LoadLatestSnapshotAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(cachedNodes);
+            .ReturnsAsync(cachedCatalog);
 
         var source = CreateSource(clientMock, snapshotMock);
         var result = await source.FetchCatalogAsync();

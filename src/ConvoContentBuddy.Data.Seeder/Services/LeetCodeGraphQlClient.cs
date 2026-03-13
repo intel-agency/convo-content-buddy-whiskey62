@@ -127,6 +127,7 @@ public sealed class LeetCodeGraphQlClient : ILeetCodeGraphQlClient
         while (skip < total);
 
         // Enrich each catalog entry with per-problem content from the detail query.
+        // Any failure here propagates and prevents a partial catalog from being persisted.
         for (var i = 0; i < allNodes.Count; i++)
         {
             var node = allNodes[i];
@@ -147,21 +148,27 @@ public sealed class LeetCodeGraphQlClient : ILeetCodeGraphQlClient
     }
 
     /// <inheritdoc/>
-    public async Task<string?> FetchProblemContentAsync(string titleSlug, CancellationToken cancellationToken = default)
+    public async Task<string> FetchProblemContentAsync(string titleSlug, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var variables = new { titleSlug };
-            var response = await ExecuteGraphQlQueryAsync<LeetCodeQuestionDetailResponseDto>(
-                QuestionDetailQuery, variables, cancellationToken).ConfigureAwait(false);
+        var variables = new { titleSlug };
+        var response = await ExecuteGraphQlQueryAsync<LeetCodeQuestionDetailResponseDto>(
+            QuestionDetailQuery, variables, cancellationToken).ConfigureAwait(false);
 
-            return response?.Data?.Question?.Content;
-        }
-        catch (Exception ex)
+        if (response?.Errors?.Count > 0)
         {
-            _logger.LogWarning(ex, "Failed to fetch content for problem '{TitleSlug}'", titleSlug);
-            return null;
+            var errorMessages = string.Join("; ", response.Errors.Select(e => e.Message));
+            throw new HttpRequestException(
+                $"GraphQL detail query returned errors for '{titleSlug}': {errorMessages}");
         }
+
+        var content = response?.Data?.Question?.Content;
+        if (content is null)
+        {
+            throw new HttpRequestException(
+                $"GraphQL detail query returned null content for '{titleSlug}'");
+        }
+
+        return content;
     }
 
     private async Task<T?> ExecuteGraphQlQueryAsync<T>(

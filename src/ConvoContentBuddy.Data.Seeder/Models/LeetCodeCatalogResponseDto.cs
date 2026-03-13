@@ -112,3 +112,20 @@ public sealed class LeetCodeQuestionDetailDto
     [JsonPropertyName("content")]
     public string? Content { get; set; }
 }
+
+/// <summary>
+/// The raw snapshot model persisted by <see cref="ConvoContentBuddy.Data.Seeder.Services.SnapshotService"/>.
+/// Wraps the aggregated catalog data in a shape that preserves the GraphQL envelope structure
+/// (total count + full enriched question list), enabling faithful source replay without losing
+/// envelope metadata or unmapped fields.
+/// </summary>
+public sealed class LeetCodeRawCatalogSnapshotDto
+{
+    /// <summary>Gets or sets the total number of problems reported by the LeetCode API.</summary>
+    [JsonPropertyName("total")]
+    public int Total { get; set; }
+
+    /// <summary>Gets or sets the full list of question nodes with <c>Content</c> populated from detail queries.</summary>
+    [JsonPropertyName("questions")]
+    public List<LeetCodeQuestionNodeDto> Questions { get; set; } = [];
+}

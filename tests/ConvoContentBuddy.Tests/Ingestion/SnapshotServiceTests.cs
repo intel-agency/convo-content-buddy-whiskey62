@@ -32,13 +32,15 @@ public class SnapshotServiceTests
             .ToList();
 
     /// <summary>
-    /// Verifies that <c>PersistSnapshotAsync</c> serializes the raw nodes (including Content) and
-    /// calls both repository methods with correctly populated data.
+    /// Verifies that <c>PersistSnapshotAsync</c> serializes the raw catalog envelope (including
+    /// total count and Content on each node) and calls both repository methods with correctly
+    /// populated data.
     /// </summary>
     [Fact]
     public async Task PersistSnapshotAsync_CallsRepositoryWithCorrectData()
     {
         var nodes = BuildNodes(3, withContent: true);
+        var rawCatalog = new LeetCodeRawCatalogSnapshotDto { Total = nodes.Count, Questions = nodes };
         IngestionSnapshot? capturedSnapshot = null;
 
         var repo = new Mock<ISnapshotRepository>();
@@ -49,30 +51,64 @@ public class SnapshotServiceTests
             .Returns(Task.CompletedTask);
 
         var service = CreateService(repo);
-        await service.PersistSnapshotAsync(nodes);
+        await service.PersistSnapshotAsync(rawCatalog);
 
         capturedSnapshot.Should().NotBeNull();
         capturedSnapshot!.Source.Should().Be(SnapshotService.SourceIdentifier);
         capturedSnapshot.ProblemCount.Should().Be(3);
 
-        // Payload must round-trip as raw nodes preserving Content
-        var deserialized = JsonSerializer.Deserialize<List<LeetCodeQuestionNodeDto>>(capturedSnapshot.Payload, JsonOpts);
-        deserialized.Should().HaveCount(3);
-        deserialized![0].TitleSlug.Should().Be("slug-1");
-        deserialized[0].Content.Should().Be("<p>Content 1</p>");
+        // Payload must round-trip as raw envelope preserving total and Content
+        var deserialized = JsonSerializer.Deserialize<LeetCodeRawCatalogSnapshotDto>(capturedSnapshot.Payload, JsonOpts);
+        deserialized.Should().NotBeNull();
+        deserialized!.Total.Should().Be(3);
+        deserialized.Questions.Should().HaveCount(3);
+        deserialized.Questions[0].TitleSlug.Should().Be("slug-1");
+        deserialized.Questions[0].Content.Should().Be("<p>Content 1</p>");
 
         repo.Verify(r => r.MarkAsLatestAsync(capturedSnapshot.Id, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     /// <summary>
-    /// Verifies that when a snapshot exists, the raw nodes (including Content) are correctly
-    /// deserialized and returned.
+    /// Verifies that the persisted payload contains the full GraphQL envelope structure,
+    /// including the <c>total</c> field, not just the flat question array.
     /// </summary>
     [Fact]
-    public async Task LoadLatestSnapshotAsync_WhenSnapshotExists_ReturnsDeserializedNodes()
+    public async Task PersistSnapshotAsync_PayloadContainsGraphQlEnvelope()
     {
         var nodes = BuildNodes(2, withContent: true);
-        var payload = JsonSerializer.Serialize(nodes, JsonOpts);
+        var rawCatalog = new LeetCodeRawCatalogSnapshotDto { Total = 42, Questions = nodes };
+
+        IngestionSnapshot? capturedSnapshot = null;
+        var repo = new Mock<ISnapshotRepository>();
+        repo.Setup(r => r.PersistSnapshotAsync(It.IsAny<IngestionSnapshot>(), It.IsAny<CancellationToken>()))
+            .Callback<IngestionSnapshot, CancellationToken>((s, _) => capturedSnapshot = s)
+            .Returns(Task.CompletedTask);
+        repo.Setup(r => r.MarkAsLatestAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var service = CreateService(repo);
+        await service.PersistSnapshotAsync(rawCatalog);
+
+        capturedSnapshot.Should().NotBeNull();
+
+        // The payload must be an object with a "total" key, not a bare JSON array
+        using var doc = JsonDocument.Parse(capturedSnapshot!.Payload);
+        doc.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
+        doc.RootElement.TryGetProperty("total", out var totalProp).Should().BeTrue();
+        totalProp.GetInt32().Should().Be(42);
+        doc.RootElement.TryGetProperty("questions", out _).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Verifies that when a snapshot exists, the raw catalog envelope (including total count and
+    /// Content on each node) is correctly deserialized and returned.
+    /// </summary>
+    [Fact]
+    public async Task LoadLatestSnapshotAsync_WhenSnapshotExists_ReturnsDeserializedEnvelope()
+    {
+        var nodes = BuildNodes(2, withContent: true);
+        var rawCatalog = new LeetCodeRawCatalogSnapshotDto { Total = 99, Questions = nodes };
+        var payload = JsonSerializer.Serialize(rawCatalog, JsonOpts);
 
         var snapshot = new IngestionSnapshot
         {
@@ -92,11 +128,12 @@ public class SnapshotServiceTests
         var result = await service.LoadLatestSnapshotAsync();
 
         result.Should().NotBeNull();
-        result!.Should().HaveCount(2);
-        result[0].TitleSlug.Should().Be("slug-1");
-        result[0].Content.Should().Be("<p>Content 1</p>");
-        result[1].TitleSlug.Should().Be("slug-2");
-        result[1].Content.Should().Be("<p>Content 2</p>");
+        result!.Total.Should().Be(99);
+        result.Questions.Should().HaveCount(2);
+        result.Questions[0].TitleSlug.Should().Be("slug-1");
+        result.Questions[0].Content.Should().Be("<p>Content 1</p>");
+        result.Questions[1].TitleSlug.Should().Be("slug-2");
+        result.Questions[1].Content.Should().Be("<p>Content 2</p>");
     }
 
     /// <summary>

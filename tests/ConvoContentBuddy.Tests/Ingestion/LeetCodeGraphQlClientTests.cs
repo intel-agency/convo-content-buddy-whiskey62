@@ -491,4 +491,178 @@ public class LeetCodeGraphQlClientTests
         await act.Should().ThrowAsync<HttpRequestException>()
             .WithMessage("*GraphQL catalog query returned errors*");
     }
+
+    /// <summary>
+    /// Verifies that <see cref="HttpRequestException"/> is thrown when a per-problem detail query
+    /// returns GraphQL errors, preventing partial catalog data from being returned.
+    /// </summary>
+    [Fact]
+    public async Task FetchAllProblemsAsync_ThrowsWhenDetailQueryReturnsGraphQlErrors()
+    {
+        var catalogBody = BuildCatalogResponse(1, new[]
+        {
+            BuildQuestion("two-sum", "1", "Two Sum", "Easy")
+        });
+
+        var detailErrorResponse = new
+        {
+            data = (object?)null,
+            errors = new[] { new { message = "Problem not available" } }
+        };
+
+        var handler = new Mock<HttpMessageHandler>();
+        SetupDispatchedHandler(handler, req =>
+            IsCatalogRequest(req)
+                ? JsonResponse(catalogBody)
+                : JsonResponse(detailErrorResponse));
+
+        var client = CreateClientWithOptions(handler, new LeetCodeClientOptions
+        {
+            DelayBetweenRequestsMs = 0,
+            PageSize = 100,
+            MaxRetryAttempts = 1
+        });
+
+        var act = async () => await client.FetchAllProblemsAsync();
+
+        await act.Should().ThrowAsync<HttpRequestException>()
+            .WithMessage("*GraphQL detail query returned errors*");
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="HttpRequestException"/> is thrown when a per-problem detail query
+    /// returns a null content field, preventing incomplete catalog data from being returned.
+    /// </summary>
+    [Fact]
+    public async Task FetchAllProblemsAsync_ThrowsWhenDetailQueryReturnsNullContent()
+    {
+        var catalogBody = BuildCatalogResponse(1, new[]
+        {
+            BuildQuestion("two-sum", "1", "Two Sum", "Easy")
+        });
+
+        var nullContentResponse = new
+        {
+            data = new
+            {
+                question = new { content = (string?)null }
+            }
+        };
+
+        var handler = new Mock<HttpMessageHandler>();
+        SetupDispatchedHandler(handler, req =>
+            IsCatalogRequest(req)
+                ? JsonResponse(catalogBody)
+                : JsonResponse(nullContentResponse));
+
+        var client = CreateClientWithOptions(handler, new LeetCodeClientOptions
+        {
+            DelayBetweenRequestsMs = 0,
+            PageSize = 100,
+            MaxRetryAttempts = 1
+        });
+
+        var act = async () => await client.FetchAllProblemsAsync();
+
+        await act.Should().ThrowAsync<HttpRequestException>()
+            .WithMessage("*null content*");
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="HttpRequestException"/> is thrown when a per-problem detail query
+    /// exhausts all retry attempts (e.g. 429 on every attempt), preventing partial catalog data.
+    /// </summary>
+    [Fact]
+    public async Task FetchAllProblemsAsync_ThrowsWhenDetailQueryExhaustsRetries()
+    {
+        var catalogBody = BuildCatalogResponse(1, new[]
+        {
+            BuildQuestion("two-sum", "1", "Two Sum", "Easy")
+        });
+
+        var handler = new Mock<HttpMessageHandler>();
+        SetupDispatchedHandler(handler, req =>
+            IsCatalogRequest(req)
+                ? JsonResponse(catalogBody)
+                : new HttpResponseMessage(HttpStatusCode.TooManyRequests));
+
+        var client = CreateClientWithOptions(handler, new LeetCodeClientOptions
+        {
+            DelayBetweenRequestsMs = 0,
+            PageSize = 100,
+            MaxRetryAttempts = 2
+        });
+
+        var act = async () => await client.FetchAllProblemsAsync();
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="LeetCodeGraphQlClient.FetchProblemContentAsync"/> throws <see cref="HttpRequestException"/>
+    /// when the detail response contains GraphQL errors, instead of silently returning null.
+    /// </summary>
+    [Fact]
+    public async Task FetchProblemContentAsync_ThrowsOnGraphQlErrors()
+    {
+        var errorResponse = new
+        {
+            data = (object?)null,
+            errors = new[] { new { message = "Problem not found" } }
+        };
+
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(JsonResponse(errorResponse));
+
+        var client = CreateClientWithOptions(handler, new LeetCodeClientOptions
+        {
+            DelayBetweenRequestsMs = 0,
+            MaxRetryAttempts = 1
+        });
+
+        var act = async () => await client.FetchProblemContentAsync("two-sum");
+
+        await act.Should().ThrowAsync<HttpRequestException>()
+            .WithMessage("*GraphQL detail query returned errors*");
+    }
+
+    /// <summary>
+    /// Verifies that <see cref="LeetCodeGraphQlClient.FetchProblemContentAsync"/> throws <see cref="HttpRequestException"/>
+    /// when the detail response content field is null, instead of silently returning null.
+    /// </summary>
+    [Fact]
+    public async Task FetchProblemContentAsync_ThrowsWhenContentIsNull()
+    {
+        var nullContentResponse = new
+        {
+            data = new
+            {
+                question = new { content = (string?)null }
+            }
+        };
+
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(JsonResponse(nullContentResponse));
+
+        var client = CreateClientWithOptions(handler, new LeetCodeClientOptions
+        {
+            DelayBetweenRequestsMs = 0,
+            MaxRetryAttempts = 1
+        });
+
+        var act = async () => await client.FetchProblemContentAsync("two-sum");
+
+        await act.Should().ThrowAsync<HttpRequestException>()
+            .WithMessage("*null content*");
+    }
 }
