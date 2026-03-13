@@ -15,7 +15,6 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.3" />
     <PackageReference Include="Microsoft.SemanticKernel" Version="1.56.0" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="9.5.0" />
-    <PackageReference Include="Qdrant.Client" Version="1.12.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.3">
       <PrivateAssets>all</PrivateAssets>
@@ -25,5 +24,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ConvoContentBuddy.ServiceDefaults\ConvoContentBuddy.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\ConvoContentBuddy.Data\ConvoContentBuddy.Data.csproj" />
   </ItemGroup>
 </Project>
