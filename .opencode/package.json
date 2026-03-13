@@ -2,6 +2,7 @@
   "dependencies": {
     "@modelcontextprotocol/server-memory": "*",
     "@modelcontextprotocol/server-sequential-thinking": "*",
-    "@opencode-ai/plugin": "1.2.24"
+    "@opencode-ai/plugin": "1.2.24",
+    "@kilocode/plugin": "7.0.46"
   }
 }

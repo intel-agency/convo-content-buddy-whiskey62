@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ConvoContentBuddy.API.Brain/ConvoContentBuddy.API.Brain.csproj" />
+    <Project Path="src/ConvoContentBuddy.AppHost/ConvoContentBuddy.AppHost.csproj" />
+    <Project Path="src/ConvoContentBuddy.Data.Seeder/ConvoContentBuddy.Data.Seeder.csproj" />
+    <Project Path="src/ConvoContentBuddy.ServiceDefaults/ConvoContentBuddy.ServiceDefaults.csproj" />
+    <Project Path="src/ConvoContentBuddy.UI.Web/ConvoContentBuddy.UI.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ConvoContentBuddy.Tests/ConvoContentBuddy.Tests.csproj" />
+  </Folder>
+</Solution>

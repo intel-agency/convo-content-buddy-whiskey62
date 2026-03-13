@@ -1,0 +1,20 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.1.1">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UserSecretsId>d87e8c29-e7ad-4b1d-865b-0f8093d76b39</UserSecretsId>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ConvoContentBuddy.ServiceDefaults\ConvoContentBuddy.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\ConvoContentBuddy.API.Brain\ConvoContentBuddy.API.Brain.csproj" />
+    <ProjectReference Include="..\ConvoContentBuddy.UI.Web\ConvoContentBuddy.UI.Web.csproj" />
+    <ProjectReference Include="..\ConvoContentBuddy.Data.Seeder\ConvoContentBuddy.Data.Seeder.csproj" />
+  </ItemGroup>
+
+</Project>

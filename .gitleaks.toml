@@ -1,0 +1,16 @@
+# gitleaks configuration
+# https://github.com/gitleaks/gitleaks
+
+title = "ConvoContentBuddy Gitleaks Config"
+
+[allowlist]
+  description = "Allowlist for auto-generated AI session output files that discuss API key usage without containing actual secrets"
+  paths = [
+    # AI session output and summary files (auto-generated, contain instructions about where to place secrets, not actual values)
+    '''.ai-repository-summary\.md''',
+    '''docs/# New session.*\.md''',
+    # Workflow failure reports and docs that reference environment variable names
+    '''docs/WORKFLOW_FAILURE_REPORT\.md''',
+    # Example/template files with placeholder values only
+    '''\.env\.example''',
+  ]

@@ -31,7 +31,6 @@ Agent names and roles are consistent across all clients. Each client resolves ag
 - orchestrator — Plans, delegates, approves; avoids direct implementation.
 - researcher — Uses configured research tooling to produce citation-rich briefs.
 - code-reviewer — Reviews diffs for correctness, security, performance, and style.
-- dev-team-lead — Coordinates development across multiple agents and tracks progress.
 
 ### Build & Quality
 

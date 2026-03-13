@@ -1,6 +1,7 @@
 ---
 description: Defines test strategies, executes validation suites, and enforces quality gates before release
 mode: subagent
+model: zai-coding-plan/glm-5
 temperature: 0.2
 tools:
   read: true

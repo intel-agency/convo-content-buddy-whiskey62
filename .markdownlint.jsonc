@@ -3,6 +3,10 @@
   "MD001": false,
   // Heading style — mixed styles across agent/template files
   "MD003": false,
+  // Unordered list indentation — ADRs/docs use non-standard indentation
+  "MD007": false,
+  // Trailing spaces — common in auto-generated docs and prose
+  "MD009": false,
   // Multiple blank lines — common in structured documents
   "MD012": false,
   // Line length — too strict for prose and templates
@@ -13,18 +17,34 @@
   "MD024": false,
   // Multiple top-level headings — command/template files use multiple h1s
   "MD025": false,
+  // Trailing punctuation in headings — common in doc/report files
+  "MD026": false,
   // Blanks inside blockquote — issue templates use spaced blockquotes
   "MD028": false,
+  // Ordered list prefix — auto-generated docs may use non-sequential numbering
+  "MD029": false,
+  // Spaces after list markers — auto-generated content varies
+  "MD030": false,
+  // Blanks around fences — most common issue in docs and ADR files
+  "MD031": false,
   // Blanks around lists — conflicts with compact template formatting
   "MD032": false,
   // Inline HTML — required for XML-structured instruction files
   "MD033": false,
+  // Bare URLs — docs and reports use raw URLs
+  "MD034": false,
   // Emphasis as heading — prompt files use bold for section markers
   "MD036": false,
+  // Spaces inside code span elements — false positives in prose
+  "MD038": false,
   // Fenced code language — many code blocks are generic placeholders
   "MD040": false,
   // First line heading — frontmatter and templates don't start with headings
   "MD041": false,
+  // Code block style — docs mix fenced and indented styles
+  "MD046": false,
+  // Tables should be surrounded by blank lines — common in report files
+  "MD058": false,
   // Link/image reference definitions — false positives in instruction files
   "MD060": false
 }

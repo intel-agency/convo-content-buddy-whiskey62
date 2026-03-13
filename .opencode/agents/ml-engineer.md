@@ -1,6 +1,7 @@
 ---
 description: Productionizes ML workflows, ensuring reliable training, evaluation, and deployment pipelines
 mode: all
+model: zai-coding-plan/glm-5
 temperature: 0.2
 tools:
   read: true
