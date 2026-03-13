@@ -15,14 +15,16 @@ public interface ILeetCodeGraphQlClient
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// A list of raw <see cref="LeetCodeQuestionNodeDto"/> instances with <c>Content</c> populated.
+    /// The full <see cref="LeetCodeCatalogResponseDto"/> GraphQL envelope with all paginated
+    /// questions aggregated under <c>data.problemsetQuestionList</c> and <c>Content</c>
+    /// populated on every node from the per-problem detail query.
     /// </returns>
     /// <exception cref="System.Net.Http.HttpRequestException">
     /// Thrown when the GraphQL response contains <c>errors</c>, when
     /// <c>problemsetQuestionList</c> / <c>questions</c> is missing on any page, or when
     /// any per-problem detail fetch fails (GraphQL errors, null content, or exhausted retries).
     /// </exception>
-    Task<List<LeetCodeQuestionNodeDto>> FetchAllProblemsAsync(CancellationToken cancellationToken = default);
+    Task<LeetCodeCatalogResponseDto> FetchAllProblemsAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Fetches the HTML content string for a single problem identified by its slug.

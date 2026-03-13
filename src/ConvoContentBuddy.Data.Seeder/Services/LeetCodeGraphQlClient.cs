@@ -69,7 +69,7 @@ public sealed class LeetCodeGraphQlClient : ILeetCodeGraphQlClient
     }
 
     /// <inheritdoc/>
-    public async Task<List<LeetCodeQuestionNodeDto>> FetchAllProblemsAsync(CancellationToken cancellationToken = default)
+    public async Task<LeetCodeCatalogResponseDto> FetchAllProblemsAsync(CancellationToken cancellationToken = default)
     {
         var pageSize = _options.PageSize > 0 ? _options.PageSize : DefaultPageSize;
         var delayMs = _options.DelayBetweenRequestsMs > 0 ? _options.DelayBetweenRequestsMs : DefaultDelayMs;
@@ -144,7 +144,20 @@ public sealed class LeetCodeGraphQlClient : ILeetCodeGraphQlClient
             }
         }
 
-        return allNodes;
+        // Wrap all aggregated pages back into the full GraphQL envelope so the snapshot layer
+        // can persist the original response shape, including the data.problemsetQuestionList
+        // wrapper and any top-level errors field needed for replay or debugging.
+        return new LeetCodeCatalogResponseDto
+        {
+            Data = new LeetCodeCatalogDataDto
+            {
+                ProblemsetQuestionList = new LeetCodeQuestionListDto
+                {
+                    Total = total,
+                    Questions = allNodes
+                }
+            }
+        };
     }
 
     /// <inheritdoc/>

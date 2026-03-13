@@ -9,21 +9,23 @@ namespace ConvoContentBuddy.Data.Seeder.Services;
 public interface ISnapshotService
 {
     /// <summary>
-    /// Serializes the raw catalog snapshot (preserving the full GraphQL envelope structure
-    /// including total count and all enriched question nodes with <c>Content</c>) and persists
-    /// it as the latest snapshot for the <c>leetcode-graphql</c> source.
+    /// Serializes the full GraphQL catalog response envelope (preserving the
+    /// <c>data.problemsetQuestionList</c> wrapper, total count, enriched question nodes with
+    /// <c>Content</c>, and any top-level <c>errors</c> field) and persists it as the latest
+    /// snapshot for the <c>leetcode-graphql</c> source.
     /// </summary>
-    /// <param name="rawCatalog">The raw catalog envelope to snapshot.</param>
+    /// <param name="catalogResponse">The full catalog GraphQL envelope to snapshot.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task PersistSnapshotAsync(LeetCodeRawCatalogSnapshotDto rawCatalog, CancellationToken cancellationToken = default);
+    Task PersistSnapshotAsync(LeetCodeCatalogResponseDto catalogResponse, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Loads and deserializes the most recent <c>leetcode-graphql</c> snapshot as a raw catalog envelope.
-    /// Callers are responsible for mapping the envelope's questions to domain DTOs.
+    /// Loads and deserializes the most recent <c>leetcode-graphql</c> snapshot as the full
+    /// catalog GraphQL envelope. Callers are responsible for extracting
+    /// <c>data.problemsetQuestionList.questions</c> and mapping nodes to domain DTOs.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
-    /// The deserialized raw catalog envelope, or <c>null</c> if no snapshot exists.
+    /// The deserialized catalog GraphQL envelope, or <c>null</c> if no snapshot exists.
     /// </returns>
-    Task<LeetCodeRawCatalogSnapshotDto?> LoadLatestSnapshotAsync(CancellationToken cancellationToken = default);
+    Task<LeetCodeCatalogResponseDto?> LoadLatestSnapshotAsync(CancellationToken cancellationToken = default);
 }

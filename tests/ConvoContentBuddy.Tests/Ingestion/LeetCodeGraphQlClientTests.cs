@@ -142,16 +142,17 @@ public class LeetCodeGraphQlClientTests
         var client = CreateClientWithOptions(handler, new LeetCodeClientOptions { DelayBetweenRequestsMs = 0, PageSize = 100 });
         var result = await client.FetchAllProblemsAsync();
 
-        result.Should().HaveCount(2);
-        result[0].TitleSlug.Should().Be("two-sum");
-        result[0].QuestionFrontendId.Should().Be("1");
-        result[0].Title.Should().Be("Two Sum");
-        result[0].Difficulty.Should().Be("Easy");
-        result[0].TopicTags.Should().ContainSingle(t => t.Name == "Array");
+        var questions = result.Data!.ProblemsetQuestionList!.Questions;
+        questions.Should().HaveCount(2);
+        questions[0].TitleSlug.Should().Be("two-sum");
+        questions[0].QuestionFrontendId.Should().Be("1");
+        questions[0].Title.Should().Be("Two Sum");
+        questions[0].Difficulty.Should().Be("Easy");
+        questions[0].TopicTags.Should().ContainSingle(t => t.Name == "Array");
 
-        result[1].TitleSlug.Should().Be("add-two-numbers");
-        result[1].QuestionFrontendId.Should().Be("2");
-        result[1].Difficulty.Should().Be("Medium");
+        questions[1].TitleSlug.Should().Be("add-two-numbers");
+        questions[1].QuestionFrontendId.Should().Be("2");
+        questions[1].Difficulty.Should().Be("Medium");
     }
 
     /// <summary>
@@ -175,8 +176,8 @@ public class LeetCodeGraphQlClientTests
         var client = CreateClientWithOptions(handler, new LeetCodeClientOptions { DelayBetweenRequestsMs = 0, PageSize = 100 });
         var result = await client.FetchAllProblemsAsync();
 
-        result.Should().HaveCount(1);
-        result[0].Content.Should().Be(expectedContent);
+        result.Data!.ProblemsetQuestionList!.Questions.Should().HaveCount(1);
+        result.Data.ProblemsetQuestionList.Questions[0].Content.Should().Be(expectedContent);
     }
 
     /// <summary>
@@ -215,7 +216,7 @@ public class LeetCodeGraphQlClientTests
 
         var result = await client.FetchAllProblemsAsync();
 
-        result.Should().HaveCount(3);
+        result.Data!.ProblemsetQuestionList!.Questions.Should().HaveCount(3);
         // 2 catalog pages + 3 detail requests = 5 total
         handler.Protected().Verify(
             "SendAsync",
@@ -284,7 +285,7 @@ public class LeetCodeGraphQlClientTests
 
         var result = await client.FetchAllProblemsAsync();
 
-        result.Should().HaveCount(1);
+        result.Data!.ProblemsetQuestionList!.Questions.Should().HaveCount(1);
         // 2 catalog requests (1 retry) + 1 detail request = 3 total
         handler.Protected().Verify(
             "SendAsync",
@@ -324,7 +325,7 @@ public class LeetCodeGraphQlClientTests
 
         var result = await client.FetchAllProblemsAsync();
 
-        result.Should().HaveCount(1);
+        result.Data!.ProblemsetQuestionList!.Questions.Should().HaveCount(1);
     }
 
     /// <summary>

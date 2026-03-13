@@ -39,17 +39,18 @@ public sealed class SnapshotService : ISnapshotService
 
     /// <inheritdoc/>
     public async Task PersistSnapshotAsync(
-        LeetCodeRawCatalogSnapshotDto rawCatalog,
+        LeetCodeCatalogResponseDto catalogResponse,
         CancellationToken cancellationToken = default)
     {
-        var payload = JsonSerializer.Serialize(rawCatalog, JsonOptions);
+        var payload = JsonSerializer.Serialize(catalogResponse, JsonOptions);
+        var problemCount = catalogResponse.Data?.ProblemsetQuestionList?.Questions?.Count ?? 0;
 
         var snapshot = new IngestionSnapshot
         {
             Id = Guid.NewGuid(),
             Source = SourceIdentifier,
             CapturedAt = DateTimeOffset.UtcNow,
-            ProblemCount = rawCatalog.Questions.Count,
+            ProblemCount = problemCount,
             Payload = payload,
             IsLatest = false
         };
@@ -58,12 +59,12 @@ public sealed class SnapshotService : ISnapshotService
         await _snapshotRepository.MarkAsLatestAsync(snapshot.Id, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
-            "Persisted snapshot {SnapshotId} with {Count} raw catalog nodes (source: {Source})",
+            "Persisted snapshot {SnapshotId} with {Count} catalog nodes (source: {Source})",
             snapshot.Id, snapshot.ProblemCount, snapshot.Source);
     }
 
     /// <inheritdoc/>
-    public async Task<LeetCodeRawCatalogSnapshotDto?> LoadLatestSnapshotAsync(
+    public async Task<LeetCodeCatalogResponseDto?> LoadLatestSnapshotAsync(
         CancellationToken cancellationToken = default)
     {
         var snapshot = await _snapshotRepository
@@ -76,12 +77,12 @@ public sealed class SnapshotService : ISnapshotService
             return null;
         }
 
-        var rawCatalog = JsonSerializer.Deserialize<LeetCodeRawCatalogSnapshotDto>(snapshot.Payload, JsonOptions);
+        var catalogResponse = JsonSerializer.Deserialize<LeetCodeCatalogResponseDto>(snapshot.Payload, JsonOptions);
 
         _logger.LogInformation(
-            "Loaded snapshot {SnapshotId} captured at {CapturedAt} with {Count} raw catalog nodes",
+            "Loaded snapshot {SnapshotId} captured at {CapturedAt} with {Count} catalog nodes",
             snapshot.Id, snapshot.CapturedAt, snapshot.ProblemCount);
 
-        return rawCatalog;
+        return catalogResponse;
     }
 }

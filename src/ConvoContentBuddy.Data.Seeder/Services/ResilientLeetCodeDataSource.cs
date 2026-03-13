@@ -40,15 +40,11 @@ public sealed class ResilientLeetCodeDataSource : ILeetCodeDataSource
         try
         {
             _logger.LogInformation("Attempting to fetch LeetCode catalog via live GraphQL");
-            var rawNodes = await _graphQlClient.FetchAllProblemsAsync(cancellationToken).ConfigureAwait(false);
+            var catalogResponse = await _graphQlClient.FetchAllProblemsAsync(cancellationToken).ConfigureAwait(false);
 
-            var rawCatalog = new LeetCodeRawCatalogSnapshotDto
-            {
-                Total = rawNodes.Count,
-                Questions = rawNodes
-            };
-            await _snapshotService.PersistSnapshotAsync(rawCatalog, cancellationToken).ConfigureAwait(false);
+            await _snapshotService.PersistSnapshotAsync(catalogResponse, cancellationToken).ConfigureAwait(false);
 
+            var rawNodes = catalogResponse.Data?.ProblemsetQuestionList?.Questions ?? [];
             var problems = rawNodes.Select(MapToProblemDto).ToList();
             _logger.LogInformation("Successfully fetched {Count} problems from live GraphQL", problems.Count);
             return problems;
@@ -63,7 +59,8 @@ public sealed class ResilientLeetCodeDataSource : ILeetCodeDataSource
         var cachedCatalog = await _snapshotService.LoadLatestSnapshotAsync(cancellationToken).ConfigureAwait(false);
         if (cachedCatalog is not null)
         {
-            var cached = cachedCatalog.Questions.Select(MapToProblemDto).ToList();
+            var rawNodes = cachedCatalog.Data?.ProblemsetQuestionList?.Questions ?? [];
+            var cached = rawNodes.Select(MapToProblemDto).ToList();
             _logger.LogInformation(
                 "Falling back to cached snapshot containing {Count} problems", cached.Count);
             return cached;
