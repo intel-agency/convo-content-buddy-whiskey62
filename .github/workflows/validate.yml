@@ -122,7 +122,7 @@ jobs:
           chmod +x /usr/local/bin/gitleaks
 
       - name: Scan for secrets
-        run: gitleaks detect --source . --redact --no-git=false
+        run: gitleaks detect --source . --redact --no-git=false --config .gitleaks.toml
 
   test-prompt-assembly:
     runs-on: ubuntu-24.04
