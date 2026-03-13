@@ -3,7 +3,7 @@ version: '3.9'
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: convocontentbuddy-postgres
     environment:
       POSTGRES_DB: convocontentbuddy
@@ -16,23 +16,6 @@ services:
       - ./docker/init-scripts/postgres:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - convocontentbuddy-network
-
-  # Qdrant Vector Database
-  qdrant:
-    image: qdrant/qdrant:v1.12.0
-    container_name: convocontentbuddy-qdrant
-    ports:
-      - "6333:6333"  # HTTP API
-      - "6334:6334"  # gRPC API
-    volumes:
-      - qdrant-data:/qdrant/storage
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -55,9 +38,7 @@ services:
     networks:
       - convocontentbuddy-network
 
-  # API Brain Service (with TMR - 3 replicas)
-  # Note: `deploy.replicas` is honored in Docker Swarm mode only.
-  # For local non-Swarm testing, use: docker compose up --scale api-brain=3
+  # API Brain Service
   api-brain:
     build:
       context: .
@@ -67,9 +48,7 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - ASPNETCORE_URLS=http://+:5000
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - ConnectionStrings__PostgreSQL=Host=postgres;Database=convocontentbuddy;Username=postgres;Password=postgres
-      - Qdrant__Host=qdrant
-      - Qdrant__Port=6334
+      - ConnectionStrings__convocontentbuddy=Host=postgres;Database=convocontentbuddy;Username=postgres;Password=postgres
       - Redis__ConnectionString=redis:6379
     ports:
       - "5000:5000"
@@ -77,12 +56,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      qdrant:
-        condition: service_healthy
       redis:
         condition: service_healthy
     deploy:
-      replicas: 3
+      replicas: 1
       restart_policy:
         condition: on-failure
         delay: 5s
@@ -105,13 +82,9 @@ services:
     environment:
       - DOTNET_ENVIRONMENT=Development
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - ConnectionStrings__PostgreSQL=Host=postgres;Database=convocontentbuddy;Username=postgres;Password=postgres
-      - Qdrant__Host=qdrant
-      - Qdrant__Port=6334
+      - ConnectionStrings__convocontentbuddy=Host=postgres;Database=convocontentbuddy;Username=postgres;Password=postgres
     depends_on:
       postgres:
-        condition: service_healthy
-      qdrant:
         condition: service_healthy
     volumes:
       - ./data:/app/data:ro
@@ -135,8 +108,6 @@ services:
 
 volumes:
   postgres-data:
-    driver: local
-  qdrant-data:
     driver: local
   redis-data:
     driver: local
