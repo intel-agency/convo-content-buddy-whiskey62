@@ -1,6 +1,12 @@
+using ConvoContentBuddy.Data;
+using Microsoft.EntityFrameworkCore;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
+builder.AddNpgsqlDbContext<AppDbContext>("convocontentbuddy",
+    configureDbContextOptions: options =>
+        options.UseNpgsql(npgsql => npgsql.UseVector()));
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
