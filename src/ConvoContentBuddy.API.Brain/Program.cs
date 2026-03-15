@@ -1,5 +1,12 @@
+using ConvoContentBuddy.API.Brain.Endpoints;
+using ConvoContentBuddy.API.Brain.Models;
+using ConvoContentBuddy.API.Brain.Repositories;
+using ConvoContentBuddy.API.Brain.Services;
 using ConvoContentBuddy.Data;
+using ConvoContentBuddy.Data.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,6 +18,26 @@ builder.AddNpgsqlDbContext<AppDbContext>("convocontentbuddy",
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+builder.Services.AddEndpointsApiExplorer();
+
+builder.Services.Configure<EmbeddingProfileOptions>(
+    builder.Configuration.GetSection("EmbeddingProfile"));
+
+builder.Services.PostConfigure<EmbeddingProfileOptions>(opts =>
+{
+    if (string.IsNullOrEmpty(opts.ApiKey))
+        opts.ApiKey = builder.Configuration["GEMINI_API_KEY"] ?? string.Empty;
+});
+
+builder.Services.AddScoped<IProblemRepository, ProblemRepository>();
+
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp =>
+{
+    var factory = sp.GetRequiredService<IHttpClientFactory>();
+    var opts = sp.GetRequiredService<IOptions<EmbeddingProfileOptions>>();
+    return new GeminiEmbeddingGenerator(factory.CreateClient(), opts);
+});
 
 var app = builder.Build();
 
@@ -18,32 +45,13 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/openapi/v1.json", "Brain API v1"));
 }
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
 app.MapDefaultEndpoints();
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+app.MapProblemEndpoints();
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+/// <summary>Exposes the top-level Program type for <c>WebApplicationFactory</c> in test projects.</summary>
+public partial class Program { }
