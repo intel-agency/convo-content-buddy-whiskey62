@@ -11,6 +11,9 @@
 		"github-actions.workflows.pinned.workflows": [
 			".github/workflows/orchestrator-agent.yml"
 		],
-		"python.analysis.typeCheckingMode": "off"
+		"python.analysis.typeCheckingMode": "off",
+		"dotnet.backgroundAnalysis.analyzerDiagnosticsScope": "fullSolution",
+		"dotnet.backgroundAnalysis.compilerDiagnosticsScope": "fullSolution",
+		"dotnet.automaticallySyncWithActiveItem": true
 	}
 }

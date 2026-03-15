@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ConvoContentBuddy.ServiceDefaults\ConvoContentBuddy.ServiceDefaults.csproj" />
+    <ProjectReference Include="..\ConvoContentBuddy.ServiceDefaults\ConvoContentBuddy.ServiceDefaults.csproj" IsAspireProjectResource="false" />
     <ProjectReference Include="..\ConvoContentBuddy.API.Brain\ConvoContentBuddy.API.Brain.csproj" />
     <ProjectReference Include="..\ConvoContentBuddy.UI.Web\ConvoContentBuddy.UI.Web.csproj" />
     <ProjectReference Include="..\ConvoContentBuddy.Data.Seeder\ConvoContentBuddy.Data.Seeder.csproj" />
