@@ -102,6 +102,28 @@ public class ProblemSearchEndpointTests : IDisposable
             Description = "Seed problem for corpus check.",
             EmbeddingModel = "gemini-embedding-001",
             EmbeddingDimensions = 1536,
+            Embedding = new Vector(new float[1536]),
+            SeededAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        });
+        ctx.SaveChanges();
+    }
+
+    private void SeedCorpusNoEmbedding()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var ctx = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        ctx.Problems.Add(new Problem
+        {
+            Id = Guid.NewGuid(),
+            Slug = "corpus-seed-no-embedding",
+            QuestionId = 998,
+            Title = "Corpus Seed No Embedding",
+            Difficulty = "Easy",
+            Description = "Seed problem with profile metadata but no embedding vector.",
+            EmbeddingModel = "gemini-embedding-001",
+            EmbeddingDimensions = 1536,
+            Embedding = null,
             SeededAt = DateTimeOffset.UtcNow,
             UpdatedAt = DateTimeOffset.UtcNow,
         });
@@ -180,6 +202,30 @@ public class ProblemSearchEndpointTests : IDisposable
         var response = await _client.GetAsync("/api/problems/search?q=binary+search");
 
         // Assert
+        ((int)response.StatusCode).Should().Be(503);
+
+        using var json = await response.Content.ReadFromJsonAsync<JsonDocument>();
+        json!.RootElement.TryGetProperty("error", out _).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Verifies that the search endpoint returns 503 when rows match the active embedding profile's
+    /// model and dimensions but none have a stored embedding vector (<c>Embedding == null</c>).
+    /// This ensures that partially-seeded rows do not bypass the corpus-availability guard.
+    /// </summary>
+    [Fact]
+    public async Task Search_Returns503_WhenProfileMatchesButNoEmbedding()
+    {
+        // Arrange — seed a row with profile metadata but no embedding vector.
+        SeedCorpusNoEmbedding();
+
+        // CountAsync reports the row exists so the first (total-count) guard passes.
+        _mockRepo.Setup(r => r.CountAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        // Act
+        var response = await _client.GetAsync("/api/problems/search?q=binary+search");
+
+        // Assert — the second guard (Embedding != null) must still reject the request.
         ((int)response.StatusCode).Should().Be(503);
 
         using var json = await response.Content.ReadFromJsonAsync<JsonDocument>();

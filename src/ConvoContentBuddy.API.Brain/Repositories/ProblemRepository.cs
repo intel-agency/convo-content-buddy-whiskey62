@@ -22,6 +22,20 @@ public class ProblemRepository : IProblemRepository
     public Task<int> CountAsync(CancellationToken cancellationToken = default) =>
         _context.Problems.CountAsync(cancellationToken);
 
+    /// <summary>
+    /// Returns a queryable filtered to problems that belong to the given embedding profile and
+    /// have a stored vector. Used by <see cref="SearchByVectorAsync"/> and exposed internally
+    /// for unit testing without a live PostgreSQL connection.
+    /// </summary>
+    public static IQueryable<Problem> ApplyProfileFilter(
+        IQueryable<Problem> query,
+        string modelName,
+        int dimensions) =>
+        query.Where(p =>
+            p.EmbeddingModel == modelName
+            && p.EmbeddingDimensions == dimensions
+            && p.Embedding != null);
+
     /// <inheritdoc/>
     public async Task<IReadOnlyList<Problem>> SearchByVectorAsync(
         Vector queryVector,

@@ -50,7 +50,9 @@ public static class ProblemEndpoints
                     statusCode: 503);
 
             var hasMatchingCorpus = await dbContext.Problems.AnyAsync(
-                p => p.EmbeddingModel == options.ModelName && p.EmbeddingDimensions == options.Dimensions,
+                p => p.EmbeddingModel == options.ModelName
+                     && p.EmbeddingDimensions == options.Dimensions
+                     && p.Embedding != null,
                 ct);
 
             if (!hasMatchingCorpus)
