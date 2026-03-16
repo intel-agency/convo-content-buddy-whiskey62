@@ -13,25 +13,25 @@
             "output": 131072
           }
         },
-        "glm-4.5-x": {
-          "name": "GLM-4.5-X",
+        "glm-4.7": {
+          "name": "GLM-4.7",
           "limit": {
-            "context": 128000,
-            "output": 16384
+            "context": 200000,
+            "output": 131072
           }
         },
-        "glm-4.5-air-x": {
-          "name": "GLM-4.5-Air-X",
+        "glm-4.7-flash": {
+          "name": "GLM-4.7-Flash",
           "limit": {
-            "context": 128000,
-            "output": 16384
+            "context": 200000,
+            "output": 131072
           }
         }
       }
     }   
   },
   "model": "zai-coding-plan/glm-5",
-  "small_model": "zai-coding-plan/glm-4.5-air-x",
+  "small_model": "zai-coding-plan/glm-4.7-flash",
   "mcp": {
     "sequential-thinking": {
       "type": "local",
