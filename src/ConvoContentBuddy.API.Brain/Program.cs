@@ -17,7 +17,19 @@ builder.AddNpgsqlDbContext<AppDbContext>("convocontentbuddy",
 
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        document.Info = new()
+        {
+            Title = "ConvoContentBuddy Brain API",
+            Version = "v1",
+            Description = "Real-time coding interview assistance API — semantic problem search powered by pgvector and Gemini embeddings"
+        };
+        return Task.CompletedTask;
+    });
+});
 builder.Services.AddEndpointsApiExplorer();
 
 builder.Services.Configure<EmbeddingProfileOptions>(
@@ -25,7 +37,7 @@ builder.Services.Configure<EmbeddingProfileOptions>(
 
 builder.Services.PostConfigure<EmbeddingProfileOptions>(opts =>
 {
-    if (string.IsNullOrEmpty(opts.ApiKey))
+    if (string.IsNullOrEmpty(opts.ApiKey) || opts.ApiKey.StartsWith("${"))
         opts.ApiKey = builder.Configuration["GEMINI_API_KEY"] ?? string.Empty;
 });
 
