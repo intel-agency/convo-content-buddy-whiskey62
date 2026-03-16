@@ -8,19 +8,17 @@ using Microsoft.Extensions.Options;
 namespace ConvoContentBuddy.Data.Seeder.Services;
 
 /// <summary>
-/// Implements <see cref="IGeminiBatchEmbeddingService"/> using the Gemini async batch embedding
-/// API. Submits a batch job, polls until completion, and maps results back to problem IDs.
+/// Implements <see cref="IGeminiBatchEmbeddingService"/> using the synchronous Gemini
+/// <c>batchEmbedContents</c> API, chunking inputs into groups of 100.
 /// </summary>
 public sealed class GeminiBatchEmbeddingService : IGeminiBatchEmbeddingService
 {
     private const int MaxRetryAttempts = 3;
-    private const int MaxPollAttempts = 60;
-    private const int DefaultPollIntervalMs = 5_000;
+    private const int ChunkSize = 100;
 
     private readonly HttpClient _httpClient;
     private readonly EmbeddingProfileOptions _options;
     private readonly ILogger<GeminiBatchEmbeddingService> _logger;
-    private readonly int _pollIntervalMs;
 
     /// <summary>
     /// Initializes a new instance of <see cref="GeminiBatchEmbeddingService"/>.
@@ -28,17 +26,14 @@ public sealed class GeminiBatchEmbeddingService : IGeminiBatchEmbeddingService
     /// <param name="httpClient">The HTTP client used to call the Gemini API.</param>
     /// <param name="options">The active embedding profile options.</param>
     /// <param name="logger">Logger for diagnostic output.</param>
-    /// <param name="pollIntervalMs">Milliseconds to wait between job status polls (default 5 000).</param>
     public GeminiBatchEmbeddingService(
         HttpClient httpClient,
         IOptions<EmbeddingProfileOptions> options,
-        ILogger<GeminiBatchEmbeddingService> logger,
-        int pollIntervalMs = DefaultPollIntervalMs)
+        ILogger<GeminiBatchEmbeddingService> logger)
     {
         _httpClient = httpClient;
         _options = options.Value;
         _logger = logger;
-        _pollIntervalMs = pollIntervalMs;
     }
 
     /// <inheritdoc/>
@@ -46,32 +41,33 @@ public sealed class GeminiBatchEmbeddingService : IGeminiBatchEmbeddingService
         IReadOnlyList<(Guid ProblemId, string Text)> items,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Submitting async batch embedding job for {Count} items.", items.Count);
+        _logger.LogInformation("Embedding {Count} items via batchEmbedContents.", items.Count);
 
-        var operationName = await SubmitBatchJobAsync(items, cancellationToken);
+        var results = new List<(Guid ProblemId, float[] Embedding)>(items.Count);
 
-        _logger.LogInformation("Batch job submitted: {OperationName}. Polling for completion.", operationName);
+        for (var offset = 0; offset < items.Count; offset += ChunkSize)
+        {
+            var chunk = items.Skip(offset).Take(ChunkSize).ToList();
+            var chunkEmbeddings = await SendChunkAsync(chunk, cancellationToken);
 
-        var completedJob = await PollUntilCompleteAsync(operationName, cancellationToken);
+            for (var i = 0; i < chunk.Count; i++)
+            {
+                results.Add((chunk[i].ProblemId, chunkEmbeddings[i].Values));
+            }
+        }
 
-        var embeddings = completedJob.Response?.Embeddings ?? [];
-
-        return items
-            .Select((item, i) => (
-                item.ProblemId,
-                Embedding: i < embeddings.Count ? embeddings[i].Values : Array.Empty<float>()))
-            .ToList();
+        return results;
     }
 
-    private async Task<string> SubmitBatchJobAsync(
-        IReadOnlyList<(Guid ProblemId, string Text)> items,
+    private async Task<List<BatchEmbedding>> SendChunkAsync(
+        IReadOnlyList<(Guid ProblemId, string Text)> chunk,
         CancellationToken cancellationToken)
     {
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{_options.ModelName}:batchEmbedContentsAsync?key={_options.ApiKey}";
+        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{_options.ModelName}:batchEmbedContents?key={_options.ApiKey}";
 
-        var requestBody = new BatchJobRequest
+        var requestBody = new BatchEmbedRequest
         {
-            Requests = items.Select(item => new BatchEmbedItem
+            Requests = chunk.Select(item => new BatchEmbedItem
             {
                 Model = $"models/{_options.ModelName}",
                 Content = new EmbedContent { Parts = [new EmbedPart { Text = item.Text }] },
@@ -92,7 +88,7 @@ public sealed class GeminiBatchEmbeddingService : IGeminiBatchEmbeddingService
                 {
                     var delay = (int)Math.Pow(2, attempt - 1) * 1_000;
                     _logger.LogWarning(
-                        "Batch job submission returned {StatusCode} on attempt {Attempt}/{Max}. Retrying in {Delay}ms.",
+                        "batchEmbedContents returned {StatusCode} on attempt {Attempt}/{Max}. Retrying in {Delay}ms.",
                         (int)response.StatusCode, attempt, MaxRetryAttempts, delay);
 
                     lastException = new HttpRequestException($"HTTP {(int)response.StatusCode}");
@@ -106,19 +102,44 @@ public sealed class GeminiBatchEmbeddingService : IGeminiBatchEmbeddingService
                     throw lastException;
                 }
 
-                response.EnsureSuccessStatusCode();
+                // Non-retryable 4xx: surface immediately without consuming retry budget.
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new IngestionException(
+                        $"batchEmbedContents returned non-retryable status {(int)response.StatusCode}.");
+                }
 
-                var result = await response.Content.ReadFromJsonAsync<BatchJobResponse>(
+                var result = await response.Content.ReadFromJsonAsync<BatchEmbedResponse>(
                     cancellationToken: cancellationToken);
 
-                return result?.Name
-                    ?? throw new IngestionException("Batch job submission returned a null operation name.");
+                if (result is null)
+                {
+                    throw new IngestionException(
+                        "batchEmbedContents returned a null or unparseable response body.");
+                }
+
+                if (result.Embeddings.Count != chunk.Count)
+                {
+                    throw new IngestionException(
+                        $"batchEmbedContents returned {result.Embeddings.Count} embeddings for {chunk.Count} requested items.");
+                }
+
+                for (var i = 0; i < result.Embeddings.Count; i++)
+                {
+                    if (result.Embeddings[i].Values.Length != _options.Dimensions)
+                    {
+                        throw new IngestionException(
+                            $"Embedding {i} has {result.Embeddings[i].Values.Length} dimensions but {_options.Dimensions} were expected.");
+                    }
+                }
+
+                return result.Embeddings;
             }
             catch (HttpRequestException ex) when (attempt < MaxRetryAttempts)
             {
                 var delay = (int)Math.Pow(2, attempt - 1) * 1_000;
                 _logger.LogWarning(ex,
-                    "HttpRequestException on batch job submission attempt {Attempt}/{Max}. Retrying in {Delay}ms.",
+                    "HttpRequestException on batchEmbedContents attempt {Attempt}/{Max}. Retrying in {Delay}ms.",
                     attempt, MaxRetryAttempts, delay);
                 lastException = ex;
                 await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
@@ -129,48 +150,12 @@ public sealed class GeminiBatchEmbeddingService : IGeminiBatchEmbeddingService
             }
         }
 
-        throw lastException ?? new HttpRequestException("Batch job submission failed after all retry attempts.");
-    }
-
-    private async Task<BatchJobStatusResponse> PollUntilCompleteAsync(
-        string operationName,
-        CancellationToken cancellationToken)
-    {
-        var url = $"https://generativelanguage.googleapis.com/v1beta/{operationName}?key={_options.ApiKey}";
-
-        for (var attempt = 1; attempt <= MaxPollAttempts; attempt++)
-        {
-            using var response = await _httpClient.GetAsync(url, cancellationToken);
-            response.EnsureSuccessStatusCode();
-
-            var status = await response.Content.ReadFromJsonAsync<BatchJobStatusResponse>(
-                cancellationToken: cancellationToken);
-
-            if (status?.Done == true)
-            {
-                if (status.Error != null)
-                    throw new IngestionException(
-                        $"Batch embedding job {operationName} failed: {status.Error.Message}");
-
-                _logger.LogInformation("Batch job {OperationName} completed successfully.", operationName);
-                return status;
-            }
-
-            _logger.LogDebug(
-                "Batch job {OperationName} not yet complete (poll {Attempt}/{Max}). Waiting {Interval}ms.",
-                operationName, attempt, MaxPollAttempts, _pollIntervalMs);
-
-            if (attempt < MaxPollAttempts)
-                await Task.Delay(_pollIntervalMs, cancellationToken).ConfigureAwait(false);
-        }
-
-        throw new IngestionException(
-            $"Batch embedding job {operationName} did not complete after {MaxPollAttempts} poll attempts.");
+        throw lastException ?? new HttpRequestException("batchEmbedContents failed after all retry attempts.");
     }
 
     // ── Request / response models ─────────────────────────────────────────────
 
-    private sealed class BatchJobRequest
+    private sealed class BatchEmbedRequest
     {
         [JsonPropertyName("requests")]
         public List<BatchEmbedItem> Requests { get; set; } = [];
@@ -200,31 +185,7 @@ public sealed class GeminiBatchEmbeddingService : IGeminiBatchEmbeddingService
         public string Text { get; set; } = string.Empty;
     }
 
-    private sealed class BatchJobResponse
-    {
-        [JsonPropertyName("name")]
-        public string? Name { get; set; }
-
-        [JsonPropertyName("done")]
-        public bool Done { get; set; }
-    }
-
-    private sealed class BatchJobStatusResponse
-    {
-        [JsonPropertyName("name")]
-        public string? Name { get; set; }
-
-        [JsonPropertyName("done")]
-        public bool Done { get; set; }
-
-        [JsonPropertyName("response")]
-        public BatchJobResult? Response { get; set; }
-
-        [JsonPropertyName("error")]
-        public BatchJobError? Error { get; set; }
-    }
-
-    private sealed class BatchJobResult
+    private sealed class BatchEmbedResponse
     {
         [JsonPropertyName("embeddings")]
         public List<BatchEmbedding> Embeddings { get; set; } = [];
@@ -234,11 +195,5 @@ public sealed class GeminiBatchEmbeddingService : IGeminiBatchEmbeddingService
     {
         [JsonPropertyName("values")]
         public float[] Values { get; set; } = [];
-    }
-
-    private sealed class BatchJobError
-    {
-        [JsonPropertyName("message")]
-        public string Message { get; set; } = string.Empty;
     }
 }

@@ -13,8 +13,8 @@ using Moq.Protected;
 namespace ConvoContentBuddy.Tests.Ingestion;
 
 /// <summary>
-/// Unit tests for <see cref="GeminiBatchEmbeddingService"/> covering batch job submission,
-/// polling until completion, result parsing, and error handling.
+/// Unit tests for <see cref="GeminiBatchEmbeddingService"/> covering synchronous
+/// batchEmbedContents requests, chunking, result parsing, and error handling.
 /// </summary>
 public class GeminiBatchEmbeddingServiceTests
 {
@@ -30,13 +30,11 @@ public class GeminiBatchEmbeddingServiceTests
 
     private static GeminiBatchEmbeddingService CreateService(
         Mock<HttpMessageHandler> handlerMock,
-        IOptions<EmbeddingProfileOptions>? options = null,
-        int pollIntervalMs = 0) =>
+        IOptions<EmbeddingProfileOptions>? options = null) =>
         new(
             new HttpClient(handlerMock.Object),
             options ?? DefaultOptions(),
-            NullLogger<GeminiBatchEmbeddingService>.Instance,
-            pollIntervalMs);
+            NullLogger<GeminiBatchEmbeddingService>.Instance);
 
     private static HttpResponseMessage JsonResponse(object body, HttpStatusCode status = HttpStatusCode.OK) =>
         new(status)
@@ -53,13 +51,13 @@ public class GeminiBatchEmbeddingServiceTests
     // ── submission tests ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// Verifies that EmbedBatchAsync issues a POST to the async batch endpoint.
+    /// Verifies that EmbedBatchAsync issues a POST to the batchEmbedContents endpoint.
     /// </summary>
     [Fact]
-    public async Task EmbedBatchAsync_PostsToBatchAsyncEndpoint()
+    public async Task EmbedBatchAsync_PostsToBatchEmbedContentsEndpoint()
     {
-        var operationName = "operations/abc123";
         HttpRequestMessage? capturedPost = null;
+        var postCallCount = 0;
 
         var handler = new Mock<HttpMessageHandler>();
         handler.Protected()
@@ -68,19 +66,9 @@ public class GeminiBatchEmbeddingServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync((HttpRequestMessage req, CancellationToken _) =>
             {
-                if (req.Method == HttpMethod.Post)
-                {
-                    capturedPost = req;
-                    return JsonResponse(new { name = operationName, done = false });
-                }
-
-                // GET poll → return completed
-                return JsonResponse(new
-                {
-                    name = operationName,
-                    done = true,
-                    response = new { embeddings = new[] { new { values = new float[] { 0.1f, 0.2f, 0.3f, 0.4f } } } }
-                });
+                capturedPost = req;
+                postCallCount++;
+                return JsonResponse(new { embeddings = new[] { new { values = new float[] { 0.1f, 0.2f, 0.3f, 0.4f } } } });
             });
 
         var item = Item("problem text");
@@ -89,87 +77,10 @@ public class GeminiBatchEmbeddingServiceTests
         await service.EmbedBatchAsync([item]);
 
         capturedPost.Should().NotBeNull();
-        capturedPost!.RequestUri!.AbsoluteUri.Should().Contain(":batchEmbedContentsAsync");
-    }
-
-    /// <summary>
-    /// Verifies that the operation name from the submission response is used for polling.
-    /// </summary>
-    [Fact]
-    public async Task EmbedBatchAsync_UsesOperationNameFromSubmissionForPolling()
-    {
-        var operationName = "operations/xyz789";
-        var pollUrls = new List<string>();
-
-        var handler = new Mock<HttpMessageHandler>();
-        handler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync((HttpRequestMessage req, CancellationToken _) =>
-            {
-                if (req.Method == HttpMethod.Post)
-                    return JsonResponse(new { name = operationName, done = false });
-
-                pollUrls.Add(req.RequestUri!.AbsoluteUri);
-                return JsonResponse(new
-                {
-                    name = operationName,
-                    done = true,
-                    response = new { embeddings = new[] { new { values = new float[] { 1f, 2f, 3f, 4f } } } }
-                });
-            });
-
-        var item = Item();
-        var service = CreateService(handler);
-
-        await service.EmbedBatchAsync([item]);
-
-        pollUrls.Should().NotBeEmpty();
-        pollUrls.Should().AllSatisfy(url => url.Should().Contain(operationName));
-    }
-
-    // ── polling tests ─────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Verifies that the service polls multiple times before the job completes.
-    /// </summary>
-    [Fact]
-    public async Task EmbedBatchAsync_PollsUntilJobComplete()
-    {
-        var operationName = "operations/poll-test";
-        var pollCount = 0;
-
-        var handler = new Mock<HttpMessageHandler>();
-        handler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync((HttpRequestMessage req, CancellationToken _) =>
-            {
-                if (req.Method == HttpMethod.Post)
-                    return JsonResponse(new { name = operationName, done = false });
-
-                pollCount++;
-                var done = pollCount >= 3;
-                if (!done)
-                    return JsonResponse(new { name = operationName, done = false });
-
-                return JsonResponse(new
-                {
-                    name = operationName,
-                    done = true,
-                    response = new { embeddings = new[] { new { values = new float[] { 0.5f, 0.6f, 0.7f, 0.8f } } } }
-                });
-            });
-
-        var item = Item();
-        var service = CreateService(handler, pollIntervalMs: 0);
-
-        var results = await service.EmbedBatchAsync([item]);
-
-        pollCount.Should().Be(3);
-        results.Should().HaveCount(1);
+        capturedPost!.Method.Should().Be(HttpMethod.Post);
+        capturedPost.RequestUri!.AbsoluteUri.Should().Contain(":batchEmbedContents");
+        capturedPost.RequestUri.AbsoluteUri.Should().NotContain(":batchEmbedContentsAsync");
+        postCallCount.Should().Be(1);
     }
 
     // ── result parsing tests ──────────────────────────────────────────────────
@@ -180,7 +91,6 @@ public class GeminiBatchEmbeddingServiceTests
     [Fact]
     public async Task EmbedBatchAsync_MapsEmbeddingsToProblemIds()
     {
-        var operationName = "operations/map-test";
         var id1 = Guid.NewGuid();
         var id2 = Guid.NewGuid();
         var embedding1 = new float[] { 0.1f, 0.2f, 0.3f, 0.4f };
@@ -192,24 +102,14 @@ public class GeminiBatchEmbeddingServiceTests
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync((HttpRequestMessage req, CancellationToken _) =>
-            {
-                if (req.Method == HttpMethod.Post)
-                    return JsonResponse(new { name = operationName, done = false });
-
-                return JsonResponse(new
+                JsonResponse(new
                 {
-                    name = operationName,
-                    done = true,
-                    response = new
+                    embeddings = new[]
                     {
-                        embeddings = new[]
-                        {
-                            new { values = embedding1 },
-                            new { values = embedding2 }
-                        }
+                        new { values = embedding1 },
+                        new { values = embedding2 }
                     }
-                });
-            });
+                }));
 
         var items = new List<(Guid ProblemId, string Text)>
         {
@@ -233,7 +133,6 @@ public class GeminiBatchEmbeddingServiceTests
     [Fact]
     public async Task EmbedBatchAsync_PreservesInputOrder()
     {
-        var operationName = "operations/order-test";
         var items = Enumerable.Range(0, 5)
             .Select(i => (Id: Guid.NewGuid(), Text: $"text {i}"))
             .ToList();
@@ -246,17 +145,7 @@ public class GeminiBatchEmbeddingServiceTests
                 ItExpr.IsAny<HttpRequestMessage>(),
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync((HttpRequestMessage req, CancellationToken _) =>
-            {
-                if (req.Method == HttpMethod.Post)
-                    return JsonResponse(new { name = operationName, done = false });
-
-                return JsonResponse(new
-                {
-                    name = operationName,
-                    done = true,
-                    response = new { embeddings = embeddings.Select(e => new { values = e }).ToList() }
-                });
-            });
+                JsonResponse(new { embeddings = embeddings.Select(e => new { values = e }).ToList() }));
 
         var inputItems = items.Select(x => (x.Id, x.Text)).ToList();
         var service = CreateService(handler);
@@ -271,50 +160,18 @@ public class GeminiBatchEmbeddingServiceTests
         }
     }
 
-    // ── error handling tests ──────────────────────────────────────────────────
+    // ── chunking tests ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Verifies that an <see cref="IngestionException"/> is thrown when the batch job reports a failure.
+    /// Verifies that inputs exceeding 100 items are split into separate POST requests of at most 100.
     /// </summary>
     [Fact]
-    public async Task EmbedBatchAsync_ThrowsIngestionExceptionOnJobFailure()
+    public async Task EmbedBatchAsync_ChunksLargeInputInto100ItemBatches()
     {
-        var operationName = "operations/fail-test";
+        var items = Enumerable.Range(0, 250)
+            .Select(i => (Id: Guid.NewGuid(), Text: $"text {i}"))
+            .ToList();
 
-        var handler = new Mock<HttpMessageHandler>();
-        handler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(),
-                ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync((HttpRequestMessage req, CancellationToken _) =>
-            {
-                if (req.Method == HttpMethod.Post)
-                    return JsonResponse(new { name = operationName, done = false });
-
-                return JsonResponse(new
-                {
-                    name = operationName,
-                    done = true,
-                    error = new { message = "Quota exceeded." }
-                });
-            });
-
-        var item = Item();
-        var service = CreateService(handler);
-
-        var act = async () => await service.EmbedBatchAsync([item]);
-
-        await act.Should().ThrowAsync<IngestionException>()
-            .WithMessage("*Quota exceeded.*");
-    }
-
-    /// <summary>
-    /// Verifies that submission retries on HTTP 429 and succeeds on a subsequent attempt.
-    /// </summary>
-    [Fact]
-    public async Task EmbedBatchAsync_RetriesSubmissionOn429()
-    {
-        var operationName = "operations/retry-test";
         var postCallCount = 0;
 
         var handler = new Mock<HttpMessageHandler>();
@@ -324,44 +181,64 @@ public class GeminiBatchEmbeddingServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync((HttpRequestMessage req, CancellationToken _) =>
             {
-                if (req.Method == HttpMethod.Post)
-                {
-                    postCallCount++;
-                    if (postCallCount == 1)
-                        return new HttpResponseMessage(HttpStatusCode.TooManyRequests);
-                    return JsonResponse(new { name = operationName, done = false });
-                }
+                postCallCount++;
+                // Chunks are 100, 100, 50 — return exactly the right count for each.
+                var count = postCallCount < 3 ? 100 : 50;
+                var chunkEmbeddings = Enumerable.Range(0, count)
+                    .Select(i => new { values = new float[] { i, i + 0.1f, i + 0.2f, i + 0.3f } })
+                    .ToArray();
+                return JsonResponse(new { embeddings = chunkEmbeddings });
+            });
 
-                return JsonResponse(new
-                {
-                    name = operationName,
-                    done = true,
-                    response = new { embeddings = new[] { new { values = new float[] { 1f, 2f, 3f, 4f } } } }
-                });
+        var inputItems = items.Select(x => (x.Id, x.Text)).ToList();
+        var service = CreateService(handler);
+
+        var results = await service.EmbedBatchAsync(inputItems);
+
+        postCallCount.Should().Be(3); // 100 + 100 + 50
+        results.Should().HaveCount(250);
+        for (var i = 0; i < 250; i++)
+            results[i].ProblemId.Should().Be(items[i].Id);
+    }
+
+    // ── error handling tests ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Verifies that a non-retryable 4xx response throws <see cref="IngestionException"/>
+    /// and that only a single POST is issued (no retry).
+    /// </summary>
+    [Fact]
+    public async Task EmbedBatchAsync_ThrowsIngestionExceptionOnJobFailure()
+    {
+        var postCallCount = 0;
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync((HttpRequestMessage _, CancellationToken _) =>
+            {
+                postCallCount++;
+                return new HttpResponseMessage(HttpStatusCode.BadRequest);
             });
 
         var item = Item();
-        var service = CreateService(handler, pollIntervalMs: 0);
+        var service = CreateService(handler);
 
-        var results = await service.EmbedBatchAsync([item]);
+        var act = async () => await service.EmbedBatchAsync([item]);
 
-        postCallCount.Should().Be(2);
-        results.Should().HaveCount(1);
+        await act.Should().ThrowAsync<IngestionException>();
+        postCallCount.Should().Be(1);
     }
 
     /// <summary>
-    /// Verifies that an <see cref="IngestionException"/> is thrown when the job never completes
-    /// within the maximum poll attempts.
+    /// Verifies that the service retries on HTTP 429 and succeeds on a subsequent attempt.
     /// </summary>
     [Fact]
-    public async Task EmbedBatchAsync_ThrowsWhenJobNeverCompletes()
+    public async Task EmbedBatchAsync_RetriesSubmissionOn429()
     {
-        var operationName = "operations/timeout-test";
+        var postCallCount = 0;
 
-        // Always return done=false so we exhaust poll attempts.
-        // Use a very low maxPollAttempts via a subclass or just observe the throw.
-        // We use MaxPollAttempts=60 by default; to avoid slow tests we need a custom service.
-        // Instead, we create a derived testable wrapper that has MaxPollAttempts=2.
         var handler = new Mock<HttpMessageHandler>();
         handler.Protected()
             .Setup<Task<HttpResponseMessage>>("SendAsync",
@@ -369,20 +246,98 @@ public class GeminiBatchEmbeddingServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync((HttpRequestMessage req, CancellationToken _) =>
             {
-                if (req.Method == HttpMethod.Post)
-                    return JsonResponse(new { name = operationName, done = false });
+                postCallCount++;
+                if (postCallCount == 1)
+                    return new HttpResponseMessage(HttpStatusCode.TooManyRequests);
 
-                // Always in progress
-                return JsonResponse(new { name = operationName, done = false });
+                return JsonResponse(new { embeddings = new[] { new { values = new float[] { 1f, 2f, 3f, 4f } } } });
             });
 
-        // Use cancellation to simulate timeout instead of waiting for 60 polls.
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
         var item = Item();
-        var service = CreateService(handler, pollIntervalMs: 0);
+        var service = CreateService(handler);
 
-        var act = async () => await service.EmbedBatchAsync([item], cts.Token);
+        var results = await service.EmbedBatchAsync([item]);
 
-        await act.Should().ThrowAsync<Exception>();
+        postCallCount.Should().Be(2);
+        results.Should().HaveCount(1);
+        results[0].Embedding.Should().BeEquivalentTo(new float[] { 1f, 2f, 3f, 4f });
+    }
+
+    /// <summary>
+    /// Verifies that a null response body throws <see cref="IngestionException"/>.
+    /// </summary>
+    [Fact]
+    public async Task EmbedBatchAsync_ThrowsIngestionExceptionOnNullResponseBody()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("null", Encoding.UTF8, "application/json")
+            });
+
+        var item = Item();
+        var service = CreateService(handler);
+
+        var act = async () => await service.EmbedBatchAsync([item]);
+
+        await act.Should().ThrowAsync<IngestionException>();
+    }
+
+    /// <summary>
+    /// Verifies that a response with fewer embeddings than requested throws <see cref="IngestionException"/>.
+    /// </summary>
+    [Fact]
+    public async Task EmbedBatchAsync_ThrowsIngestionExceptionOnShortEmbeddingCount()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(JsonResponse(new
+            {
+                embeddings = new[] { new { values = new float[] { 1f, 2f, 3f, 4f } } }
+            }));
+
+        var items = new List<(Guid ProblemId, string Text)>
+        {
+            (Guid.NewGuid(), "text one"),
+            (Guid.NewGuid(), "text two")
+        };
+        var service = CreateService(handler);
+
+        var act = async () => await service.EmbedBatchAsync(items);
+
+        await act.Should().ThrowAsync<IngestionException>();
+    }
+
+    /// <summary>
+    /// Verifies that embeddings with wrong dimensions throw <see cref="IngestionException"/>.
+    /// </summary>
+    [Fact]
+    public async Task EmbedBatchAsync_ThrowsIngestionExceptionOnWrongDimensions()
+    {
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(JsonResponse(new
+            {
+                // DefaultOptions sets Dimensions = 4, but we return 2-element vectors.
+                embeddings = new[] { new { values = new float[] { 1f, 2f } } }
+            }));
+
+        var item = Item();
+        var service = CreateService(handler);
+
+        var act = async () => await service.EmbedBatchAsync([item]);
+
+        await act.Should().ThrowAsync<IngestionException>();
     }
 }
+
