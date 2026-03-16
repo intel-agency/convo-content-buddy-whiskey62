@@ -103,20 +103,19 @@ ConvoContentBuddy/
 ├── src/
 │   ├── ConvoContentBuddy.AppHost/           # Aspire Orchestrator
 │   ├── ConvoContentBuddy.ServiceDefaults/   # OTLP, Health Checks, Resilience
-│   ├── ConvoContentBuddy.API.Brain/         # ASP.NET Core Web API, Semantic Kernel Hub
+│   ├── ConvoContentBuddy.API.Brain/         # ASP.NET Core Web API, Semantic Search
+│   ├── ConvoContentBuddy.Data/              # EF Core Data Layer, Entities, Migrations
 │   ├── ConvoContentBuddy.UI.Web/           # Blazor WASM, SignalR Client, Speech Interop
 │   └── ConvoContentBuddy.Data.Seeder/      # Worker Service for LeetCode ingestion
 ├── tests/
-│   └── ConvoContentBuddy.Tests/            # Unit & Integration Tests
+│   └── ConvoContentBuddy.Tests/            # Unit & Integration Tests (Api, DataLayer, Ingestion)
 ├── docker/                                  # Docker configurations
 │   ├── api-brain.Dockerfile
 │   ├── data-seeder.Dockerfile
 │   ├── ui-web.Dockerfile
 │   └── nginx.conf
 ├── docs/                                    # Documentation
-│   ├── architecture/                        # Architecture Decision Records (ADRs)
-│   ├── api/                                # API Documentation
-│   └── user-guide/                         # User Guides
+│   └── architecture/                        # Architecture Decision Records (ADRs)
 ├── docker-compose.yml                       # Local development orchestration
 └── ConvoContentBuddy.slnx                  # Solution file
 ```
@@ -180,9 +179,6 @@ Access the Aspire Dashboard for real-time monitoring at `http://localhost:15000`
 ## 📚 Documentation
 
 - [Architecture Overview](docs/architecture/README.md)
-- [API Documentation](docs/api/README.md)
-- [User Guide](docs/user-guide/README.md)
-- [Deployment Guide](docs/deployment/README.md)
 - [Repository Summary](.ai-repository-summary.md)
 
 ## 🚢 Deployment
@@ -229,15 +225,17 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [x] Setup Aspire orchestration with TMR
 - [x] Configure OpenTelemetry and health checks
 
-### Phase 2: Semantic Knowledge Ingestion
-- [ ] Build data seeder utility
-- [ ] Implement embedding service
-- [ ] Upsert vectors to Qdrant
+### Phase 2: Semantic Knowledge Ingestion ✅
+- [x] Build data seeder utility
+- [x] Implement LeetCode GraphQL client with resilient fetch
+- [x] Implement Gemini embedding service (single + batch)
+- [x] EF Core data layer with pgvector (entities, migrations, repositories)
+- [x] Upsert vectors via pgvector extension
 
-### Phase 3: The Hybrid Intelligence "Brain"
-- [ ] Implement vector search provider
-- [ ] Implement graph traversal provider
-- [ ] Build hybrid retriever service
+### Phase 3: The Hybrid Intelligence "Brain" ✅
+- [x] Implement Gemini embedding generator for search
+- [x] Implement vector similarity search via pgvector
+- [x] Build Problem search endpoint
 
 ### Phase 4: Aerospace-Grade Redundancy
 - [ ] Implement failover manager

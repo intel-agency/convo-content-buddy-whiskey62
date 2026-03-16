@@ -7,9 +7,14 @@ scope: repository
 <instructions>
   <purpose>
     <summary>
-      GitHub Actions-based AI orchestration system. On GitHub events (issues, PR comments, reviews),
-      the `orchestrator-agent` workflow assembles a structured prompt, spins up a devcontainer,
-      and runs `opencode --agent Orchestrator` to delegate work to specialist sub-agents in `.opencode/agents/`.
+      **ConvoContentBuddy** — an AI-powered real-time programming interview assistant. The application
+      autonomously transcribes audio, performs hybrid vector-graph search to identify algorithmic problems,
+      and surfaces solutions in a zero-interaction Blazor WASM dashboard.
+
+      This repository also uses a GitHub Actions-based AI orchestration system: on GitHub events
+      (issues, PR comments, reviews), the `orchestrator-agent` workflow assembles a structured prompt,
+      spins up a devcontainer, and runs `opencode --agent Orchestrator` to delegate work to specialist
+      sub-agents in `.opencode/agents/`.
     </summary>
   </purpose>
 
@@ -71,14 +76,22 @@ scope: repository
     <entry><path>.opencode/agents/orchestrator.md</path><description>Orchestrator — coordinates specialists, never writes code directly</description></entry>
     <entry><path>.opencode/agents/</path><description>All specialist agents (developer, code-reviewer, planner, devops-engineer, github-expert, etc.)</description></entry>
     <entry><path>.opencode/commands/</path><description>Reusable command prompts (orchestrate-new-project, grind-pr-reviews, fix-failing-workflows, etc.)</description></entry>
-    <entry><path>.opencode/opencode.json</path><description>opencode config — MCP server definitions</description></entry>
+    <entry><path>opencode.json</path><description>opencode config (root) — MCP server definitions, ZAI model provider, agent settings</description></entry>
     <!-- Devcontainer -->
     <entry><path>.github/.devcontainer/Dockerfile</path><description>Devcontainer image — .NET SDK, Bun, uv, opencode CLI (build context for publish-docker)</description></entry>
     <entry><path>.github/.devcontainer/devcontainer.json</path><description>Build-time devcontainer config (Dockerfile + Features: node, python, gh CLI)</description></entry>
     <entry><path>.devcontainer/devcontainer.json</path><description>Consumer devcontainer — pulls prebuilt GHCR image, no local build</description></entry>
+    <!-- Application source -->
+    <entry><path>src/ConvoContentBuddy.AppHost/</path><description>Aspire orchestrator — wires Postgres+pgvector, Redis, API.Brain, Data.Seeder, UI.Web</description></entry>
+    <entry><path>src/ConvoContentBuddy.API.Brain/</path><description>ASP.NET Core Web API — semantic search endpoints, Gemini embedding, pgvector retrieval</description></entry>
+    <entry><path>src/ConvoContentBuddy.Data/</path><description>Shared EF Core data layer — AppDbContext, entities (Problem, Tag, ProblemTag, IngestionSnapshot), migrations, repositories</description></entry>
+    <entry><path>src/ConvoContentBuddy.Data.Seeder/</path><description>Worker service — LeetCode ingestion via GraphQL, Gemini batch-embedding, vector upsertion</description></entry>
+    <entry><path>src/ConvoContentBuddy.UI.Web/</path><description>Blazor WASM client — SignalR + Web Speech API integration</description></entry>
+    <entry><path>src/ConvoContentBuddy.ServiceDefaults/</path><description>Shared OTLP config, health checks, resilience policies</description></entry>
     <!-- Tests -->
     <entry><path>test/</path><description>Shell-based tests: devcontainer build, tool availability, prompt assembly</description></entry>
     <entry><path>test/fixtures/</path><description>Sample webhook payloads for local testing</description></entry>
+    <entry><path>tests/ConvoContentBuddy.Tests/</path><description>xUnit test suite — Api, DataLayer, Ingestion test sub-folders</description></entry>
     <!-- Remote instructions -->
     <entry><path>local_ai_instruction_modules/</path><description>Local instruction modules (development rules, workflows, delegation, terminal commands)</description></entry>
   </repository_map>
@@ -157,11 +170,9 @@ scope: repository
       <!--
         | Check                  | Command                                              | When to run              |
         |========================|======================================================|==========================|
-        | Build + Roslyn analysis| dotnet build {SolutionName}.sln -warnaserror          | Every task               |
-        | Code style (C#)        | dotnet format {SolutionName}.sln --verify-no-changes  | Every task               |
-        | Unit tests             | dotnet test {SolutionName}.sln --no-build             | Every task               |
-        | Polyglot lint          | trunk check                                           | Every task               |
-        | Security scan          | trunk check --all --filter=trufflehog,osv-scanner,... | When explicitly required |
+        | Build + Roslyn analysis| dotnet build ConvoContentBuddy.slnx -warnaserror                                              | Every task               |
+        | Code style (C#)        | dotnet format ConvoContentBuddy.slnx --verify-no-changes                                      | Every task               |
+        | Unit tests             | dotnet test tests/ConvoContentBuddy.Tests/ConvoContentBuddy.Tests.csproj --no-build           | Every task               |
         | Shell tests            | bash test/test-prompt-assembly.sh                     | Prompt/workflow changes  |
         | Devcontainer tests     | bash test/test-devcontainer-tools.sh                  | Dockerfile changes       |
         | Workflow structure     | grep -c "^name:" .github/workflows/*.yml (expect 1)   | Workflow changes         |
