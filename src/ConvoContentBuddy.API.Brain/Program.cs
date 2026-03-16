@@ -41,7 +41,7 @@ builder.Services.PostConfigure<EmbeddingProfileOptions>(opts =>
         opts.ApiKey = builder.Configuration["GEMINI_API_KEY"] ?? string.Empty;
 });
 
-builder.Services.AddScoped<IProblemRepository, ProblemRepository>();
+builder.Services.AddScoped<IProblemRepository, ConvoContentBuddy.API.Brain.Repositories.ProblemRepository>();
 
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IEmbeddingGenerator<string, Embedding<float>>>(sp =>
